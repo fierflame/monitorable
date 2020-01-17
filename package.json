@@ -1,0 +1,61 @@
+{
+  "name": "monitorable",
+  "version": "0.0.0",
+  "main": "dist/monitorable.common.js",
+  "module": "dist/monitorable.esm.js",
+  "scripts": {
+    "build": "rollup -c",
+    "tsc": "tsc -p tsconfig.json",
+    "lint": "eslint --ext .ts src",
+    "lint-fix": "eslint --fix --ext .ts src"
+  },
+  "typings": "./types",
+  "files": [
+    "types.d.ts",
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "keywords": [
+    "monitorable"
+  ],
+  "author": "Fierflame",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fierflame/monitorable.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fierflame/monitorable/issues"
+  },
+  "homepage": "https://github.com/fierflame/monitorable#readme",
+  "devDependencies": {
+    "@babel/cli": "^7.5.5",
+    "@babel/core": "^7.5.5",
+    "@babel/plugin-proposal-async-generator-functions": "^7.2.0",
+    "@babel/plugin-proposal-class-properties": "^7.5.5",
+    "@babel/plugin-proposal-do-expressions": "^7.5.0",
+    "@babel/plugin-proposal-function-bind": "^7.2.0",
+    "@babel/plugin-proposal-logical-assignment-operators": "^7.2.0",
+    "@babel/plugin-proposal-numeric-separator": "^7.2.0",
+    "@babel/plugin-proposal-object-rest-spread": "^7.5.5",
+    "@babel/plugin-proposal-optional-catch-binding": "^7.2.0",
+    "@babel/plugin-proposal-optional-chaining": "^7.2.0",
+    "@babel/plugin-proposal-partial-application": "^7.4.4",
+    "@babel/plugin-proposal-private-methods": "^7.4.4",
+    "@babel/plugin-proposal-throw-expressions": "^7.2.0",
+    "@babel/plugin-syntax-async-generators": "^7.2.0",
+    "@babel/plugin-transform-typescript": "^7.5.5",
+    "@typescript-eslint/eslint-plugin": "^1.13.0",
+    "babel-eslint": "^11.0.0-beta.0",
+    "eslint": "^6.2.1",
+    "eslint-plugin-babel": "^5.3.0",
+    "rollup": "^1.20.1",
+    "rollup-plugin-babel": "^4.3.3",
+    "rollup-plugin-dts": "^1.2.0",
+    "rollup-plugin-node-resolve": "^5.2.0",
+    "rollup-plugin-replace": "^2.2.0",
+    "rollup-plugin-terser": "^5.2.0",
+    "typescript": "^3.5.3"
+  }
+}
