@@ -8,7 +8,7 @@ export interface CancelWatch {
 /** 可监听值 */
 export interface Value<T> {
 	(): T;
-	(v: T): T;
+	(v: T, mrak?: boolean): T;
 	value: T;
 	watch(cb: WatchCallback<T, this>): CancelWatch;
 	stop(): void;
@@ -40,8 +40,7 @@ function createValue<T, V extends Value<T> = Value<T>>(
 	stop: () => void = () => {},
 	change: () => void = () => {},
 ) {
-	function set(v: T) {
-		let marked = false;
+	function set(v: T, marked = false) {
 		try {
 			return setValue(v, () => { marked = true; });
 		} finally {
@@ -54,9 +53,9 @@ function createValue<T, V extends Value<T> = Value<T>>(
 		markRead(value, 'value');
 		return getValue();
 	}
-	const value: V = ((...v: [T] | []): T => {
+	const value: V = ((...v: [T] | [T, boolean] | []): T => {
 		if (v.length) {
-			set(v[0]);
+			set(v[0], v[1]);
 			return v[0];
 		}
 		return get();
