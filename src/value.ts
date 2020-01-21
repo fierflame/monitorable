@@ -203,21 +203,19 @@ export function merge<T, V extends Value<T> = Value<T>>(cb: WatchCallback<T, V>)
 type OffValue<V> = V extends Value<infer T> ? T : V;
 
 export function mix<T extends object>(source: T): { [K in keyof T]: OffValue<T[K]>; } {
-	const obj = Object.create(Object.getPrototypeOf(source)) as { [K in keyof T]: OffValue<T[K]>; };
 	for (const k of Reflect.ownKeys(source)) {
 		const descriptor = Reflect.getOwnPropertyDescriptor(source, k);
 		if (!descriptor) { continue; }
-		if ('get' in descriptor || 'set' in descriptor) { continue; }
-		if (!('value' in descriptor)) { continue; }
+		if ('get' in descriptor || 'set' in descriptor || !('value' in descriptor)) { continue; }
 		const value = descriptor.value;
 		if (!isValue(value)) { continue; }
-		let newDescriptor = { ...descriptor };
-		delete descriptor.value;
-		newDescriptor.get = () => value();
+		descriptor.get = () => value();
 		if (descriptor.writable) {
-			newDescriptor.set = (v) => value(v);
+			descriptor.set = (v) => value(v);
 		}
-		Reflect.defineProperty(obj, k, newDescriptor);
+		delete descriptor.value;
+		delete descriptor.writable;
+		Reflect.defineProperty(source, k, descriptor);
 	}
-	return obj;
+	return source as any;
 }
