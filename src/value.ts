@@ -36,14 +36,15 @@ export interface Options {
 
 
 function createValue<T, V extends Value<T> = Value<T>>(
-	setValue: (value: T, markChange: () => void) => void,
 	getValue: () => T,
+	setValue?: (value: T, markChange: () => void) => void,
 	stop: () => void = () => {},
 	change: () => void = () => {},
-) {
+): {value: V, trigger: Trigger} {
 	function set(v: T, marked = false) {
+		if (!setValue) { return; }
 		try {
-			return setValue(v, () => { marked = true; });
+			setValue(v, () => { marked = true; });
 		} finally {
 			if (marked) {
 				trigger();
@@ -117,12 +118,18 @@ function createValue<T, V extends Value<T> = Value<T>>(
 	};
 	return {value, trigger};
 }
+/**
+ * 创建引用值
+ * @param value 初始值
+ * @param options 选项
+ */
 export function value<T>(value: T, options?: Options | boolean): Value<T>;
 export function value<T>(def: T, options?: Options | boolean): Value<T> {
 	const proxy = options === true || options && options.proxy;
 	let source: T;
 	let proxyed: T;
 	const { value } = createValue<T>(
+		() => proxyed,
 		(v, mark) => {
 			if (proxy) { v = getValue(v); }
 			if (v === source) { return; }
@@ -130,15 +137,31 @@ export function value<T>(def: T, options?: Options | boolean): Value<T> {
 			proxyed = proxy ? getProxy(source) : source;
 			mark();
 		},
-		() => proxyed,
 	);
 	value(def);
 	return value;
 }
 
-/** 计算值 */
-export function computed<T>(source: () => T, options?: Options | boolean): Value<T>;
-export function computed<T>(getter: () => T, options?: Options | boolean): Value<T> {
+/**
+ * 创建计算值
+ * @param getter 取值方法
+ * @param options 选项
+ */
+export function computed<T>(getter: () => T, options?: Options | boolean): Value<T>;
+/**
+ * 创建可赋值计算值
+ * @param getter 取值方法
+ * @param setter 复制方法
+ * @param options 选项
+ */
+export function computed<T>(getter: () => T, setter: (value: T) => void, options?: Options | boolean): Value<T>;
+export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Options | boolean, options?: Options | boolean): Value<T>;
+export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Options | boolean, options?: Options | boolean): Value<T> {
+	if (typeof setter !== 'function') {
+		options = setter;
+		setter = undefined;
+	}
+	const setValue = setter;
 	const proxy = options === true || options && options.proxy;
 	let source: T;
 	let proxyed: T;
@@ -164,18 +187,11 @@ export function computed<T>(getter: () => T, options?: Options | boolean): Value
 			}
 			throw e;
 		}
-
 	}
 	let value: Value<T>;
 	({value, trigger} = createValue<T, Value<T>>(
-		(v: T, mark) => {
-			// TODO
-			// v = getValue(v);
-			// if (v === source) { return; }
-			// source = v;
-			// mark();
-		},
 		() => computed || stoped ? proxyed : run(),
+		setValue && (v => setValue(proxy ? getValue(v) : v)),
 		() => {
 			if (stoped) { return; }
 			stoped = true;
@@ -209,9 +225,9 @@ export function mix<T extends object>(source: T): { [K in keyof T]: OffValue<T[K
 		if ('get' in descriptor || 'set' in descriptor || !('value' in descriptor)) { continue; }
 		const value = descriptor.value;
 		if (!isValue(value)) { continue; }
-		descriptor.get = () => value();
+		descriptor.get = () => value.value;
 		if (descriptor.writable) {
-			descriptor.set = (v) => value(v);
+			descriptor.set = v => (value as Value<any>).value = v;
 		}
 		delete descriptor.value;
 		delete descriptor.writable;
