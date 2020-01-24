@@ -51,14 +51,21 @@ export function equal(a: any, b: any): boolean {
 	return getValue(a) === getValue(b);
 }
 
+export type ReadMap =  Map<object | Function, Set<string | boolean | symbol>>;
+
 /** 已被读取的 */
-let read: Map<object | Function, Set<string | symbol>> | undefined;
-export function markRead(obj: object | Function, prop: string | symbol) {
+let read: ReadMap | undefined;
+
+/**
+ * 标记已读状态
+ * @param obj  要标记的对象
+ * @param prop 要标记的属性
+ */
+export function markRead(obj: object | Function, prop: string | number | boolean | symbol) {
 	if (!read) { return; }
-	let set = read.get(obj);
-	if (!set) {
-		set = new Set();
-		read.set(obj, set);
+	const set = getMepValue(read, obj, () => new Set());
+	if (typeof prop === 'number') {
+		prop = String(prop);
 	}
 	set.add(prop);
 }
@@ -103,83 +110,66 @@ export function createExecutable<T>(fn: () => T, cb: (changed: boolean) => void)
 			} else {
 				cb(false);
 			}
-		}
+const watchList = new WeakMap<object | Function, Map<string | boolean | symbol, Set<() => void>>>();
+/**
+ * 标记属性的修改，同时触发监听函数
+ * @param target 要标记的对象
+ * @param prop   要标记的属性 特别的，false 表示原型，true 表示成员
+ */
+export function markChange(target: object | Function, prop: string | number | boolean | symbol) {
+	if (!target) { return; }
+	if (!(typeof target === 'object' || typeof target === 'function')) { return; }
+	if (typeof prop === 'number') {
+		prop = String(prop);
+	} else if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') {
+		return;
 	}
-	exec.stop = () => {
-		if (!cancel()) { return; }
-		cb(false);
-	};
-	return exec;
+
+	const watch = watchList.get(target)?.get?.(prop);
+	if (!watch) { return; }
+	for (const w of [...watch]) {
+		w();
+	}
 }
-
-
-export const watchList = new WeakMap<object | Function, Map<string | symbol, (() => void)[]>>();
 
 /**
  * 监听对象属性的变化
- * @param v 要监听属性的值
- * @param key 要监听的属性名
- * @param f 属性改变后触发的函数
+ * @param target 要监听的对象
+ * @param prop   要监听的属性名 特别的，false 表示原型，true 表示成员
+ * @param fn     属性改变后触发的函数
  */
-export function watchProp(v: object | Function, key: string | symbol, f: () => void): () => void {
-	if (!v) { return () => {}; }
-	if (!(typeof v === 'object' || typeof v === 'function')) { return () => {}; }
-	if (typeof f !== 'function') { return  () => {}; }
-	if (typeof key !== 'symbol' && typeof key !== 'string') { return () => {}; }
-	v = getValue(v);
-	let map = watchList.get(v);
+export function watchProp(target: object | Function, prop: string | number | boolean | symbol, cb: () => void): () => void {
+	if (!target) { return () => {}; }
+	if (!(typeof target === 'object' || typeof target === 'function')) { return () => {}; }
+	if (typeof cb !== 'function') { return  () => {}; }
+	if (typeof prop === 'number') { prop = String(prop); }
+	if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') { return () => {}; }
+	const key = prop;
+	target = getValue(target);
+	let map = watchList.get(target);
 	if (!map) {
 		map = new Map();
-		watchList.set(v, map);
+		watchList.set(target, map);
 	}
-	let list = map.get(key);
-	if (!list) {
-		list = [];
-		map.set(key, list);
-	}
-	list.push(f);
+	const list = getMepValue(map, key, () => new Set());
+	cb = safeify(cb);
+	list.add(cb);
 	let removed = false;
 	return () => {
 		if (removed) { return; }
 		removed = true;
 
 		// 从当前列表中移除
-		if (!list) { return; }
-		const index = list.findIndex(a => a === f);
-		if (index < 0) { return; }
-		list.splice(index, 1);
+		list.delete(cb);
 
 		// 从属性关联中删除
-		if (list.length) { return; }
+		if (list.size) { return; }
 		if (!map) { return; }
 		map.delete(key);
 
 		// 映射列表中删除
 		if (map.size) { return; }
-		watchList.delete(v);
+		watchList.delete(target);
 	};
 
-}
-
-/** 
- * 标记属性的修改，同时触发监听函数
- */
-export function markChange(v: object | Function, key: string | symbol) {
-	if (!v) { return; }
-	if (!(typeof v === 'object' || typeof v === 'function')) { return; }
-	if (typeof key === 'number') {
-		key = String(key);
-	} else if (typeof key !== 'symbol' && typeof key !== 'string') {
-		return;
-	}
-
-	const watch = watchList.get(v)?.get?.(key);
-	if (!watch) { return; }
-	for (const w of [...watch]) {
-		try {
-			w();
-		} catch(e){
-			console.error(e);
-		}
-	}
 }
