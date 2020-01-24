@@ -1,5 +1,6 @@
-import { markRead, markChange, createExecutable, getValue, getProxy } from './state';
+import { markRead, markChange, getValue, getProxy } from './state';
 import { safeify } from './utils';
+import { createExecutable } from './executable';
 
 /** 取消监听的方法 */
 export interface CancelWatch {

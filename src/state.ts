@@ -125,47 +125,28 @@ export function markRead(obj: object | Function, prop: string | number | boolean
 	}
 	set.add(prop);
 }
-export interface Executable<T> {
-	(): T;
-	stop(): void;
-}
-export function createExecutable<T>(fn: () => T, cb: (changed: boolean) => void): Executable<T> {
-	cb = safeify(cb);
-	let cancelList: (() => void)[] | undefined;
-	/** 取消监听 */
-	function cancel() {
-		if (!cancelList) { return false; }
-		const list = cancelList;
-		cancelList = undefined;
-		list.forEach(f => f());
-		return true;
+/**
+ * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
+ * @param fn 要执行的含糊
+ * @param map 用于存储被读取对象的 map
+ * @param clear 是否在发送错误时清空 map
+ */
+export function observe<T>(fn: () => T, map: ReadMap = new Map(), clear = false): T {
+	const oldRead = read;
+	read = map;
+	try {
+		return fn();
+	} catch(e) {
+		if (clear) {
+			map.clear();
+		}
+		throw e;
+	} finally {
+		read = oldRead;
 	}
-	function trigger() {
-		if (!cancel()) { return; }
-		cb(true);
-	};
-	function exec() {
-		cancel();
-		const thisRead: typeof read = new Map();
-		const oldRead = read;
-		read = thisRead;
-		try {
-			return fn();
-		} catch (e) {
-			thisRead.clear();
-			throw e;
-		} finally {
-			read = oldRead;
-			if (thisRead.size) {
-				cancelList = [];
-				for ( let [obj, props] of thisRead) {
-					for (const p of props) {
-						cancelList.push(watchProp(obj, p, trigger));
-					}
-				}
-			} else {
-				cb(false);
-			}
+}
+
+
 const watchList = new WeakMap<object | Function, Map<string | boolean | symbol, Set<() => void>>>();
 /**
  * 标记属性的修改，同时触发监听函数
