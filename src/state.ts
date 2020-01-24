@@ -1,49 +1,105 @@
-import { safeify } from './utils';
+import { safeify, getMepValue } from './utils';
 
 const ValueMap = new WeakMap<object | Function, object | Function>();
-const ProxyHandler: ProxyHandler<any> = {
-	get(target, prop, receiver) {
-		markRead(target, typeof prop === 'number' ? String(prop) : prop);
-		return Reflect.get(target, prop, receiver);
-		// return getProxy(Reflect.get(target, prop, receiver));
-	},
-	set(target, prop, value, receiver) {
-		if (Reflect.get(target, prop, receiver) !== value) {
-			markChange(target, typeof prop === 'number' ? String(prop) : prop);
-		}
-		return Reflect.set(target, prop, value, receiver);
-	},
-	// getOwnPropertyDescriptor(target, prop) {
-	// 	markRead(target, typeof prop === 'number' ? String(prop) : prop);
-	// 	const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
-	// 	if (descriptor && 'value' in descriptor) {
-	// 		descriptor.value = getProxy(descriptor.value);
-	// 	}
-	// 	return descriptor;
-	// },
-	// defineProperty(target, prop, attributes) {
-	// 	// TODO
-	// 	return Reflect.defineProperty(target, prop, attributes);
-	// },
-	// deleteProperty(target, prop) {
-	// 	// TODO
-	// 	return Reflect.deleteProperty(target, prop);
-	// },
-	// enumerate(target) {
-	// 	// TODO
-	// 	return [...Reflect.enumerate(target)];
-	// },
-};
 
+/**
+ * 判断对象是否可被代理
+ */
 function isProxyable(v: any): v is object | Function {
 	return Boolean(v && ['object', 'function'].includes(typeof v));
 }
 
-export function getProxy<T>(v: T): T {
-	if (!isProxyable(v)) { return v; }
-	if (ValueMap.has(v)) { return v; }
-	return new Proxy(v, ProxyHandler);
+/**
+ * 获取被代理对象
+ * @param value 要被代理的对象
+ * @param nest 递归代理的层数
+ */
+export function getProxy<T>(value: T, nest: number | boolean = 0): T {
+	if (!isProxyable(value)) { return value; }
+	if (ValueMap.has(value)) { return value; }
+	const nestLayer: number = nest === true ? Infinity : nest || 0;
+	const proxy = new Proxy(value, {
+		set(target, prop, value, receiver) {
+			if (nest === false) { return Reflect.set(target, prop, value, receiver); }
+			const has = Reflect.has(target, prop);
+			const modified = Reflect.set(target, prop, value, getProxy(receiver));
+			if (!modified) { return modified; }
+			if (has !== Reflect.has(target, prop)) {
+				markChange(target, true);
+			}
+			return modified;
+		},
+		get(target, prop, receiver) {
+			if (nest === false) { return Reflect.get(target, prop, receiver); }
+			markRead(target, prop);
+			const value = Reflect.get(target, prop, getProxy(receiver));
+			if (nestLayer > 0) {
+				return getProxy(value, nestLayer - 1);
+			}
+			return value;
+		},
+		setPrototypeOf(target, proto) {
+			if (nest === false) { return Reflect.setPrototypeOf(target, proto); }
+			const oldProto = Reflect.getPrototypeOf(target);
+			const modified = Reflect.setPrototypeOf(target, proto);
+			if (modified && oldProto !== proto) {
+				markChange(target, false);
+			}
+			return modified;
+		},
+		getPrototypeOf(target) {
+			if (nest === false) { return Reflect.getPrototypeOf(target); }
+			markRead(target, false);
+			const value: any = Reflect.getPrototypeOf(target);
+			if (nestLayer > 0) {
+				return getProxy(value, nestLayer - 1);
+			}
+			return value;
+		},
+		defineProperty(target, prop, attributes) {
+			if (nest === false) { return Reflect.defineProperty(target, prop, attributes); }
+			let changed = true;
+			if ('value' in attributes) {
+				const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+				if (descriptor && 'value' in descriptor && getValue(attributes.value) === getValue(descriptor.value)) {
+					changed = false;
+				}
+			}
+			const modified = Reflect.defineProperty(target, prop, attributes);
+			if (changed && modified) {
+				markChange(target, prop);
+			}
+			return modified;
+		},
+		getOwnPropertyDescriptor(target, prop) {
+			if (nest === false) { return Reflect.getOwnPropertyDescriptor(target, prop); }
+			markRead(target, prop);
+			return Reflect.getOwnPropertyDescriptor(target, prop);
+		},
+		deleteProperty(target, prop) {
+			if (nest === false) { return Reflect.deleteProperty(target, prop); }
+			const has = Reflect.has(target, prop);
+			const deleted = Reflect.deleteProperty(target, prop);
+			if (has && !Reflect.has(target, prop)) {
+				markChange(target, prop);
+				markChange(target, true);
+			}
+			return deleted;
+		},
+		ownKeys(target) {
+			if (nest === false) { return Reflect.ownKeys(target); }
+			markRead(target, true);
+			return Reflect.ownKeys(target);
+		},
+		has(target, prop) {
+			if (nest === false) { return Reflect.has(target, prop); }
+			markRead(target, true);
+			return Reflect.has(target, prop);
+		},
+	});
+	return proxy;
 }
+/** 获取被代理的原始值 */
 export function getValue<T>(v: T): T {
 	return ValueMap.get(v as any) as T | undefined || v;
 }
