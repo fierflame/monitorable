@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.0.0
+ * monitorable v0.1.0-alpha.0
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -9,69 +9,363 @@
 
 Object.defineProperty(exports, '__esModule', { value: true });
 
+let printErrorLog;
+/** 设置或移除错误打印函数 */
+
+function printError(info, print = false) {
+  if (!print && (typeof info === 'function' || info === undefined)) {
+    printErrorLog = info;
+    return;
+  }
+
+  if (typeof printErrorLog === 'function') {
+    printErrorLog(info);
+    return;
+  }
+
+  console.error(info);
+}
 /** 回调函数安全化处理 */
+
 function safeify(fn) {
   return (...p) => {
     try {
       fn(...p);
     } catch (e) {
-      console.error(e);
+      printError(e, true);
     }
   };
 }
-
-const ValueMap = new WeakMap();
-const ProxyHandler = {
-  get(target, prop, receiver) {
-    markRead(target, typeof prop === 'number' ? String(prop) : prop);
-    return Reflect.get(target, prop, receiver); // return getProxy(Reflect.get(target, prop, receiver));
-  },
-
-  set(target, prop, value, receiver) {
-    if (Reflect.get(target, prop, receiver) !== value) {
-      markChange(target, typeof prop === 'number' ? String(prop) : prop);
-    }
-
-    return Reflect.set(target, prop, value, receiver);
+function getMepValue(map, key, def) {
+  if (map.has(key)) {
+    return map.get(key);
   }
 
-};
+  const value = def();
+  map.set(key, value);
+  return value;
+}
+
+const ValueMap = new WeakMap();
+/**
+ * 判断对象是否可被代理
+ */
 
 function isProxyable(v) {
   return Boolean(v && ['object', 'function'].includes(typeof v));
 }
+/**
+ * 获取被代理对象
+ * @param value 要被代理的对象
+ * @param nest 递归代理的层数
+ */
 
-function getProxy(v) {
-  if (!isProxyable(v)) {
-    return v;
+
+function getProxy(value, nest = 0) {
+  if (!isProxyable(value)) {
+    return value;
   }
 
-  if (ValueMap.has(v)) {
-    return v;
+  if (ValueMap.has(value)) {
+    return value;
   }
 
-  return new Proxy(v, ProxyHandler);
+  const nestLayer = nest === true ? Infinity : nest || 0;
+  const proxy = new Proxy(value, {
+    set(target, prop, value, receiver) {
+      if (nest === false) {
+        return Reflect.set(target, prop, value, receiver);
+      }
+
+      const has = Reflect.has(target, prop);
+      const modified = Reflect.set(target, prop, value, getProxy(receiver));
+
+      if (!modified) {
+        return modified;
+      }
+
+      if (has !== Reflect.has(target, prop)) {
+        markChange(target, true);
+      }
+
+      return modified;
+    },
+
+    get(target, prop, receiver) {
+      if (nest === false) {
+        return Reflect.get(target, prop, receiver);
+      }
+
+      markRead(target, prop);
+      const value = Reflect.get(target, prop, getProxy(receiver));
+
+      if (nestLayer > 0) {
+        return getProxy(value, nestLayer - 1);
+      }
+
+      return value;
+    },
+
+    setPrototypeOf(target, proto) {
+      if (nest === false) {
+        return Reflect.setPrototypeOf(target, proto);
+      }
+
+      const oldProto = Reflect.getPrototypeOf(target);
+      const modified = Reflect.setPrototypeOf(target, proto);
+
+      if (modified && oldProto !== proto) {
+        markChange(target, false);
+      }
+
+      return modified;
+    },
+
+    getPrototypeOf(target) {
+      if (nest === false) {
+        return Reflect.getPrototypeOf(target);
+      }
+
+      markRead(target, false);
+      const value = Reflect.getPrototypeOf(target);
+
+      if (nestLayer > 0) {
+        return getProxy(value, nestLayer - 1);
+      }
+
+      return value;
+    },
+
+    defineProperty(target, prop, attributes) {
+      if (nest === false) {
+        return Reflect.defineProperty(target, prop, attributes);
+      }
+
+      let changed = true;
+
+      if ('value' in attributes) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+
+        if (descriptor && 'value' in descriptor && getValue(attributes.value) === getValue(descriptor.value)) {
+          changed = false;
+        }
+      }
+
+      const modified = Reflect.defineProperty(target, prop, attributes);
+
+      if (changed && modified) {
+        markChange(target, prop);
+      }
+
+      return modified;
+    },
+
+    getOwnPropertyDescriptor(target, prop) {
+      if (nest === false) {
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      }
+
+      markRead(target, prop);
+      return Reflect.getOwnPropertyDescriptor(target, prop);
+    },
+
+    deleteProperty(target, prop) {
+      if (nest === false) {
+        return Reflect.deleteProperty(target, prop);
+      }
+
+      const has = Reflect.has(target, prop);
+      const deleted = Reflect.deleteProperty(target, prop);
+
+      if (has && !Reflect.has(target, prop)) {
+        markChange(target, prop);
+        markChange(target, true);
+      }
+
+      return deleted;
+    },
+
+    ownKeys(target) {
+      if (nest === false) {
+        return Reflect.ownKeys(target);
+      }
+
+      markRead(target, true);
+      return Reflect.ownKeys(target);
+    },
+
+    has(target, prop) {
+      if (nest === false) {
+        return Reflect.has(target, prop);
+      }
+
+      markRead(target, true);
+      return Reflect.has(target, prop);
+    }
+
+  });
+  return proxy;
 }
+/** 获取被代理的原始值 */
+
 function getValue(v) {
   return ValueMap.get(v) || v;
 }
-/** 已被读取的 */
+function equal(a, b) {
+  return getValue(a) === getValue(b);
+}
 
+/** 已被读取的 */
 let read;
+/**
+ * 标记已读状态
+ * @param obj  要标记的对象
+ * @param prop 要标记的属性
+ */
+
 function markRead(obj, prop) {
   if (!read) {
     return;
   }
 
-  let set = read.get(obj);
+  const set = getMepValue(read, obj, () => new Set());
 
-  if (!set) {
-    set = new Set();
-    read.set(obj, set);
+  if (typeof prop === 'number') {
+    prop = String(prop);
   }
 
   set.add(prop);
 }
+/**
+ * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
+ * @param fn 要执行的含糊
+ * @param map 用于存储被读取对象的 map
+ * @param clear 是否在发送错误时清空 map
+ */
+
+function observe(fn, map = new Map(), clear = false) {
+  const oldRead = read;
+  read = map;
+
+  try {
+    return fn();
+  } catch (e) {
+    if (clear) {
+      map.clear();
+    }
+
+    throw e;
+  } finally {
+    read = oldRead;
+  }
+}
+const watchList = new WeakMap();
+/**
+ * 标记属性的修改，同时触发监听函数
+ * @param target 要标记的对象
+ * @param prop   要标记的属性 特别的，false 表示原型，true 表示成员
+ */
+
+function markChange(target, prop) {
+  var _watchList$get, _watchList$get$get;
+
+  if (!target) {
+    return;
+  }
+
+  if (!(typeof target === 'object' || typeof target === 'function')) {
+    return;
+  }
+
+  if (typeof prop === 'number') {
+    prop = String(prop);
+  } else if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') {
+    return;
+  }
+
+  const watch = (_watchList$get = watchList.get(target)) === null || _watchList$get === void 0 ? void 0 : (_watchList$get$get = _watchList$get.get) === null || _watchList$get$get === void 0 ? void 0 : _watchList$get$get.call(_watchList$get, prop);
+
+  if (!watch) {
+    return;
+  }
+
+  for (const w of [...watch]) {
+    w();
+  }
+}
+/**
+ * 监听对象属性的变化
+ * @param target 要监听的对象
+ * @param prop   要监听的属性名 特别的，false 表示原型，true 表示成员
+ * @param fn     属性改变后触发的函数
+ */
+
+function watchProp(target, prop, cb) {
+  if (!target) {
+    return () => {};
+  }
+
+  if (!(typeof target === 'object' || typeof target === 'function')) {
+    return () => {};
+  }
+
+  if (typeof cb !== 'function') {
+    return () => {};
+  }
+
+  if (typeof prop === 'number') {
+    prop = String(prop);
+  }
+
+  if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') {
+    return () => {};
+  }
+
+  const key = prop;
+  target = getValue(target);
+  let map = watchList.get(target);
+
+  if (!map) {
+    map = new Map();
+    watchList.set(target, map);
+  }
+
+  const list = getMepValue(map, key, () => new Set());
+  cb = safeify(cb);
+  list.add(cb);
+  let removed = false;
+  return () => {
+    if (removed) {
+      return;
+    }
+
+    removed = true; // 从当前列表中移除
+
+    list.delete(cb); // 从属性关联中删除
+
+    if (list.size) {
+      return;
+    }
+
+    if (!map) {
+      return;
+    }
+
+    map.delete(key); // 映射列表中删除
+
+    if (map.size) {
+      return;
+    }
+
+    watchList.delete(target);
+  };
+}
+
+/**
+ * 创建可监听执行函数
+ * @param fn 要监听执行的函数
+ * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
+ */
 function createExecutable(fn, cb) {
   cb = safeify(cb);
   let cancelList;
@@ -99,17 +393,10 @@ function createExecutable(fn, cb) {
   function exec() {
     cancel();
     const thisRead = new Map();
-    const oldRead = read;
-    read = thisRead;
 
     try {
-      return fn();
-    } catch (e) {
-      thisRead.clear();
-      throw e;
+      return observe(fn, thisRead, true);
     } finally {
-      read = oldRead;
-
       if (thisRead.size) {
         cancelList = [];
 
@@ -134,119 +421,6 @@ function createExecutable(fn, cb) {
 
   return exec;
 }
-const watchList = new WeakMap();
-/**
- * 监听对象属性的变化
- * @param v 要监听属性的值
- * @param key 要监听的属性名
- * @param f 属性改变后触发的函数
- */
-
-function watchProp(v, key, f) {
-  if (!v) {
-    return () => {};
-  }
-
-  if (!(typeof v === 'object' || typeof v === 'function')) {
-    return () => {};
-  }
-
-  if (typeof f !== 'function') {
-    return () => {};
-  }
-
-  if (typeof key !== 'symbol' && typeof key !== 'string') {
-    return () => {};
-  }
-
-  v = getValue(v);
-  let map = watchList.get(v);
-
-  if (!map) {
-    map = new Map();
-    watchList.set(v, map);
-  }
-
-  let list = map.get(key);
-
-  if (!list) {
-    list = [];
-    map.set(key, list);
-  }
-
-  list.push(f);
-  let removed = false;
-  return () => {
-    if (removed) {
-      return;
-    }
-
-    removed = true; // 从当前列表中移除
-
-    if (!list) {
-      return;
-    }
-
-    const index = list.findIndex(a => a === f);
-
-    if (index < 0) {
-      return;
-    }
-
-    list.splice(index, 1); // 从属性关联中删除
-
-    if (list.length) {
-      return;
-    }
-
-    if (!map) {
-      return;
-    }
-
-    map.delete(key); // 映射列表中删除
-
-    if (map.size) {
-      return;
-    }
-
-    watchList.delete(v);
-  };
-}
-/** 
- * 标记属性的修改，同时触发监听函数
- */
-
-function markChange(v, key) {
-  var _watchList$get, _watchList$get$get;
-
-  if (!v) {
-    return;
-  }
-
-  if (!(typeof v === 'object' || typeof v === 'function')) {
-    return;
-  }
-
-  if (typeof key === 'number') {
-    key = String(key);
-  } else if (typeof key !== 'symbol' && typeof key !== 'string') {
-    return;
-  }
-
-  const watch = (_watchList$get = watchList.get(v)) === null || _watchList$get === void 0 ? void 0 : (_watchList$get$get = _watchList$get.get) === null || _watchList$get$get === void 0 ? void 0 : _watchList$get$get.call(_watchList$get, key);
-
-  if (!watch) {
-    return;
-  }
-
-  for (const w of [...watch]) {
-    try {
-      w();
-    } catch (e) {
-      console.error(e);
-    }
-  }
-}
 
 /** 取消监听的方法 */
 
@@ -256,10 +430,14 @@ function isValue(x) {
 }
 /** 触发监听 */
 
-function createValue(setValue, getValue, stop = () => {}, change = () => {}) {
+function createValue(getValue, setValue, stop = () => {}, change = () => {}) {
   function set(v, marked = false) {
+    if (!setValue) {
+      return;
+    }
+
     try {
-      return setValue(v, () => {
+      setValue(v, () => {
         marked = true;
       });
     } finally {
@@ -381,6 +559,12 @@ function createValue(setValue, getValue, stop = () => {}, change = () => {}) {
     trigger
   };
 }
+/**
+ * 创建引用值
+ * @param value 初始值
+ * @param options 选项
+ */
+
 
 function value(def, options) {
   const proxy = options === true || options && options.proxy;
@@ -388,7 +572,7 @@ function value(def, options) {
   let proxyed;
   const {
     value
-  } = createValue((v, mark) => {
+  } = createValue(() => proxyed, (v, mark) => {
     if (proxy) {
       v = getValue(v);
     }
@@ -400,13 +584,23 @@ function value(def, options) {
     source = v;
     proxyed = proxy ? getProxy(source) : source;
     mark();
-  }, () => proxyed);
+  });
   value(def);
   return value;
 }
-/** 计算值 */
+/**
+ * 创建计算值
+ * @param getter 取值方法
+ * @param options 选项
+ */
 
-function computed(getter, options) {
+function computed(getter, setter, options) {
+  if (typeof setter !== 'function') {
+    options = setter;
+    setter = undefined;
+  }
+
+  const setValue = setter;
   const proxy = options === true || options && options.proxy;
   let source;
   let proxyed;
@@ -446,12 +640,7 @@ function computed(getter, options) {
   ({
     value,
     trigger
-  } = createValue((v, mark) => {// TODO
-    // v = getValue(v);
-    // if (v === source) { return; }
-    // source = v;
-    // mark();
-  }, () => computed || stoped ? proxyed : run(), () => {
+  } = createValue(() => computed || stoped ? proxyed : run(), setValue && (v => setValue(proxy ? getValue(v) : v)), () => {
     if (stoped) {
       return;
     }
@@ -503,10 +692,10 @@ function mix(source) {
       continue;
     }
 
-    descriptor.get = () => value();
+    descriptor.get = () => value.value;
 
     if (descriptor.writable) {
-      descriptor.set = v => value(v);
+      descriptor.set = v => value.value = v;
     }
 
     delete descriptor.value;
@@ -518,8 +707,19 @@ function mix(source) {
 }
 
 exports.computed = computed;
+exports.createExecutable = createExecutable;
+exports.equal = equal;
+exports.getMepValue = getMepValue;
+exports.getProxy = getProxy;
+exports.getValue = getValue;
 exports.isValue = isValue;
+exports.markChange = markChange;
+exports.markRead = markRead;
 exports.merge = merge;
 exports.mix = mix;
+exports.observe = observe;
+exports.printError = printError;
+exports.safeify = safeify;
 exports.value = value;
+exports.watchProp = watchProp;
 //# sourceMappingURL=monitorable.common.js.map
