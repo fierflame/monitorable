@@ -29,11 +29,25 @@ export function safeify<T extends any[]>(fn: (...p: T) => void): (...p: T) => vo
 	};
 }
 
-export function getMepValue<K, V>(map: Map<K, V>, key: K, def: () => V): V {
-	if (map.has(key)) {
-		return map.get(key)!;
+export function getMapValue<K, V>(
+	map: Map<K, V>,
+	key: K,
+	def: () => V,
+): V;
+export function getMapValue<K extends object, V>(
+	map: WeakMap<K, V>,
+	key: K,
+	def: () => V,
+): V;
+export function getMapValue<K, V>(
+	map: WeakMap<K & object, V> | Map<K, V>,
+	key: K,
+	def: () => V,
+): V {
+	if (map.has(key as any)) {
+		return map.get(key as any)!;
 	}
 	const value = def();
-	map.set(key, value);
+	map.set(key as any, value);
 	return value;
 }

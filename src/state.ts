@@ -1,4 +1,4 @@
-import { safeify, getMepValue } from './utils';
+import { safeify, getMapValue } from './utils';
 
 const ValueMap = new WeakMap<object | Function, object | Function>();
 
@@ -119,7 +119,7 @@ let read: ReadMap | undefined;
  */
 export function markRead(obj: object | Function, prop: string | number | boolean | symbol) {
 	if (!read) { return; }
-	const set = getMepValue(read, obj, () => new Set());
+	const set = getMapValue(read, obj, () => new Set());
 	if (typeof prop === 'number') {
 		prop = String(prop);
 	}
@@ -188,7 +188,7 @@ export function watchProp(target: object | Function, prop: string | number | boo
 		map = new Map();
 		watchList.set(target, map);
 	}
-	const list = getMepValue(map, key, () => new Set());
+	const list = getMapValue(map, key, () => new Set());
 	cb = safeify(cb);
 	list.add(cb);
 	let removed = false;
