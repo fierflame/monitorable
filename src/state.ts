@@ -1,7 +1,5 @@
 import { safeify, getMapValue } from './utils';
 
-const ValueMap = new WeakMap<object | Function, object | Function>();
-
 /**
  * 判断对象是否可被代理
  */
@@ -9,20 +7,24 @@ function isProxyable(v: any): v is object | Function {
 	return Boolean(v && ['object', 'function'].includes(typeof v));
 }
 
+let getValue: any;
 /**
  * 获取被代理对象
- * @param value 要被代理的对象
+ * @param obj  要被代理的对象
  * @param nest 递归代理的层数
  */
-export function getProxy<T>(value: T, nest: number | boolean = 0): T {
+export function encase<T>(value: T, nest: number | boolean = 0): T {
 	if (!isProxyable(value)) { return value; }
-	if (ValueMap.has(value)) { return value; }
+	const original = recover(value);
 	const nestLayer: number = nest === true ? Infinity : nest || 0;
-	const proxy = new Proxy(value, {
+	const proxy = new Proxy(original, {
 		set(target, prop, value, receiver) {
-			if (nest === false) { return Reflect.set(target, prop, value, receiver); }
+			if (nest === false) {
+				return Reflect.set(target, prop, value, receiver);
+			}
 			const has = Reflect.has(target, prop);
-			const modified = Reflect.set(target, prop, value, getProxy(receiver));
+			const modified =
+				Reflect.set(target, prop, value, encase(receiver));
 			if (!modified) { return modified; }
 			if (has !== Reflect.has(target, prop)) {
 				markChange(target, true);
@@ -30,16 +32,24 @@ export function getProxy<T>(value: T, nest: number | boolean = 0): T {
 			return modified;
 		},
 		get(target, prop, receiver) {
-			if (nest === false) { return Reflect.get(target, prop, receiver); }
-			markRead(target, prop);
-			const value = Reflect.get(target, prop, getProxy(receiver));
-			if (nestLayer > 0) {
-				return getProxy(value, nestLayer - 1);
+			if (getValue === proxy) {
+				if (prop === '__monitorable__recover__') {
+					getValue = original;
+					return;
+				}
 			}
+			if (nest === false) {
+				return Reflect.get(target, prop, receiver);
+			}
+			markRead(target, prop);
+			const value = Reflect.get(target, prop, encase(receiver));
+			if (nestLayer > 0) { return encase(value, nestLayer - 1); }
 			return value;
 		},
 		setPrototypeOf(target, proto) {
-			if (nest === false) { return Reflect.setPrototypeOf(target, proto); }
+			if (nest === false) {
+				return Reflect.setPrototypeOf(target, proto);
+			}
 			const oldProto = Reflect.getPrototypeOf(target);
 			const modified = Reflect.setPrototypeOf(target, proto);
 			if (modified && oldProto !== proto) {
@@ -48,36 +58,47 @@ export function getProxy<T>(value: T, nest: number | boolean = 0): T {
 			return modified;
 		},
 		getPrototypeOf(target) {
-			if (nest === false) { return Reflect.getPrototypeOf(target); }
+			if (nest === false) {
+				return Reflect.getPrototypeOf(target);
+			}
 			markRead(target, false);
 			const value: any = Reflect.getPrototypeOf(target);
 			if (nestLayer > 0) {
-				return getProxy(value, nestLayer - 1);
+				return encase(value, nestLayer - 1);
 			}
 			return value;
 		},
-		defineProperty(target, prop, attributes) {
-			if (nest === false) { return Reflect.defineProperty(target, prop, attributes); }
+		defineProperty(target, prop, attr) {
+			if (nest === false) {
+				return Reflect.defineProperty(target, prop, attr);
+			}
 			let changed = true;
-			if ('value' in attributes) {
-				const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
-				if (descriptor && 'value' in descriptor && getValue(attributes.value) === getValue(descriptor.value)) {
+			if ('value' in attr) {
+				const desc =
+					Reflect.getOwnPropertyDescriptor(target, prop);
+				if (
+					desc && 'value' in desc
+					&& recover(attr.value) === recover(desc.value)) {
 					changed = false;
 				}
 			}
-			const modified = Reflect.defineProperty(target, prop, attributes);
+			const modified = Reflect.defineProperty(target, prop, attr);
 			if (changed && modified) {
 				markChange(target, prop);
 			}
 			return modified;
 		},
 		getOwnPropertyDescriptor(target, prop) {
-			if (nest === false) { return Reflect.getOwnPropertyDescriptor(target, prop); }
+			if (nest === false) {
+				return Reflect.getOwnPropertyDescriptor(target, prop);
+			}
 			markRead(target, prop);
 			return Reflect.getOwnPropertyDescriptor(target, prop);
 		},
 		deleteProperty(target, prop) {
-			if (nest === false) { return Reflect.deleteProperty(target, prop); }
+			if (nest === false) {
+				return Reflect.deleteProperty(target, prop);
+			}
 			const has = Reflect.has(target, prop);
 			const deleted = Reflect.deleteProperty(target, prop);
 			if (has && !Reflect.has(target, prop)) {
@@ -100,14 +121,29 @@ export function getProxy<T>(value: T, nest: number | boolean = 0): T {
 	return proxy;
 }
 /** 获取被代理的原始值 */
-export function getValue<T>(v: T): T {
-	return ValueMap.get(v as any) as T | undefined || v;
+export function recover<T>(v: T): T {
+	if (!v) { return v; }
+	if (!isProxyable(v)) { return v; }
+	let value = v;
+	try {
+		getValue = v;
+		value = (v as any).__monitorable__recover__;
+	} catch {}
+	value = getValue;
+	getValue = false;
+	if (!value) { return v; }
+	if (typeof value === 'object') { return value; }
+	if (typeof value === 'function') { return value; }
+	return v;
 }
 export function equal(a: any, b: any): boolean {
-	return getValue(a) === getValue(b);
+	return recover(a) === recover(b);
 }
 
-export type ReadMap =  Map<object | Function, Set<string | boolean | symbol>>;
+export type ReadMap =  Map<
+	object | Function,
+	Set<string | boolean | symbol>
+>;
 
 /** 已被读取的 */
 let read: ReadMap | undefined;
@@ -117,7 +153,10 @@ let read: ReadMap | undefined;
  * @param obj  要标记的对象
  * @param prop 要标记的属性
  */
-export function markRead(obj: object | Function, prop: string | number | boolean | symbol) {
+export function markRead(
+	obj: object | Function,
+	prop: string | number | boolean | symbol,
+) {
 	if (!read) { return; }
 	const set = getMapValue(read, obj, () => new Set());
 	if (typeof prop === 'number') {
@@ -131,7 +170,11 @@ export function markRead(obj: object | Function, prop: string | number | boolean
  * @param map 用于存储被读取对象的 map
  * @param clear 是否在发送错误时清空 map
  */
-export function observe<T>(fn: () => T, map: ReadMap = new Map(), clear = false): T {
+export function observe<T>(
+	fn: () => T,
+	map: ReadMap = new Map(),
+	clear = false,
+): T {
 	const oldRead = read;
 	read = map;
 	try {
@@ -147,18 +190,30 @@ export function observe<T>(fn: () => T, map: ReadMap = new Map(), clear = false)
 }
 
 
-const watchList = new WeakMap<object | Function, Map<string | boolean | symbol, Set<() => void>>>();
+const watchList = new WeakMap<
+	object | Function,
+	Map<string | boolean | symbol, Set<() => void>>
+>();
 /**
  * 标记属性的修改，同时触发监听函数
  * @param target 要标记的对象
  * @param prop   要标记的属性 特别的，false 表示原型，true 表示成员
  */
-export function markChange(target: object | Function, prop: string | number | boolean | symbol) {
+export function markChange(
+	target: object | Function,
+	prop: string | number | boolean | symbol,
+) {
 	if (!target) { return; }
-	if (!(typeof target === 'object' || typeof target === 'function')) { return; }
+	if (!isProxyable(target)) {
+		return;
+	}
 	if (typeof prop === 'number') {
 		prop = String(prop);
-	} else if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') {
+	} else if (
+		typeof prop !== 'symbol'
+		&& typeof prop !== 'string'
+		&& typeof prop !== 'boolean'
+	) {
 		return;
 	}
 
@@ -175,14 +230,30 @@ export function markChange(target: object | Function, prop: string | number | bo
  * @param prop   要监听的属性名 特别的，false 表示原型，true 表示成员
  * @param fn     属性改变后触发的函数
  */
-export function watchProp(target: object | Function, prop: string | number | boolean | symbol, cb: () => void): () => void {
+export function watchProp(
+	target: object | Function,
+	prop: string | number | boolean | symbol,
+	cb: () => void,
+): () => void {
 	if (!target) { return () => {}; }
-	if (!(typeof target === 'object' || typeof target === 'function')) { return () => {}; }
-	if (typeof cb !== 'function') { return  () => {}; }
-	if (typeof prop === 'number') { prop = String(prop); }
-	if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') { return () => {}; }
+	if (!(typeof target === 'object' || typeof target === 'function')) {
+		return () => {};
+	}
+	if (typeof cb !== 'function') {
+		return  () => {};
+	}
+	if (typeof prop === 'number') {
+		prop = String(prop);
+	}
+	if (
+		typeof prop !== 'symbol'
+		&& typeof prop !== 'string'
+		&& typeof prop !== 'boolean'
+	) {
+		return () => {};
+	}
 	const key = prop;
-	target = getValue(target);
+	target = recover(target);
 	let map = watchList.get(target);
 	if (!map) {
 		map = new Map();

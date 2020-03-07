@@ -10,7 +10,10 @@ export interface Executable<T> {
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-export function createExecutable<T>(fn: () => T, cb: (changed: boolean) => void): Executable<T> {
+export function createExecutable<T>(
+	fn: () => T,
+	cb: (changed: boolean) => void,
+): Executable<T> {
 	cb = safeify(cb);
 	let cancelList: (() => void)[] | undefined;
 	/** 取消监听 */

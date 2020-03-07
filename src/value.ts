@@ -1,4 +1,4 @@
-import { markRead, markChange, getValue, getProxy } from './state';
+import { markRead, markChange, recover, encase } from './state';
 import { safeify } from './utils';
 import { createExecutable } from './executable';
 
@@ -36,7 +36,7 @@ export interface Options {
 
 
 function createValue<T, V extends Value<T> = Value<T>>(
-	getValue: () => T,
+	recover: () => T,
 	setValue?: (value: T, markChange: () => void) => void,
 	stop: () => void = () => {},
 	change: () => void = () => {},
@@ -53,7 +53,7 @@ function createValue<T, V extends Value<T> = Value<T>>(
 	}
 	function get() {
 		markRead(value, 'value');
-		return getValue();
+		return recover();
 	}
 	const value: V = ((...v: [T] | [T, boolean] | []): T => {
 		if (v.length) {
@@ -123,18 +123,24 @@ function createValue<T, V extends Value<T> = Value<T>>(
  * @param value 初始值
  * @param options 选项
  */
-export function value<T>(value: T, options?: Options | boolean): Value<T>;
-export function value<T>(def: T, options?: Options | boolean): Value<T> {
+export function value<T>(
+	value: T,
+	options?: Options | boolean,
+): Value<T>;
+export function value<T>(
+	def: T,
+	options?: Options | boolean,
+): Value<T> {
 	const proxy = options === true || options && options.proxy;
 	let source: T;
 	let proxyed: T;
 	const { value } = createValue<T>(
 		() => proxyed,
 		(v, mark) => {
-			if (proxy) { v = getValue(v); }
+			if (proxy) { v = recover(v); }
 			if (v === source) { return; }
 			source = v;
-			proxyed = proxy ? getProxy(source) : source;
+			proxyed = proxy ? encase(source) : source;
 			mark();
 		},
 	);
@@ -147,16 +153,31 @@ export function value<T>(def: T, options?: Options | boolean): Value<T> {
  * @param getter 取值方法
  * @param options 选项
  */
-export function computed<T>(getter: () => T, options?: Options | boolean): Value<T>;
+export function computed<T>(
+	getter: () => T,
+	options?: Options | boolean,
+): Value<T>;
 /**
  * 创建可赋值计算值
  * @param getter 取值方法
  * @param setter 复制方法
  * @param options 选项
  */
-export function computed<T>(getter: () => T, setter: (value: T) => void, options?: Options | boolean): Value<T>;
-export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Options | boolean, options?: Options | boolean): Value<T>;
-export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Options | boolean, options?: Options | boolean): Value<T> {
+export function computed<T>(
+	getter: () => T,
+	setter: (value: T) => void,
+	options?: Options | boolean,
+): Value<T>;
+export function computed<T>(
+	getter: () => T,
+	setter?: ((value: T) => void) | Options | boolean,
+	options?: Options | boolean,
+): Value<T>;
+export function computed<T>(
+	getter: () => T,
+	setter?: ((value: T) => void) | Options | boolean,
+	options?: Options | boolean,
+): Value<T> {
 	if (typeof setter !== 'function') {
 		options = setter;
 		setter = undefined;
@@ -178,8 +199,8 @@ export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Opt
 		computed = true;
 		try {
 			source = executable();
-			if (proxy) { source = getValue(source); }
-			proxyed = proxy ? getProxy(source) : source;
+			if (proxy) { source = recover(source); }
+			proxyed = proxy ? encase(source) : source;
 			return proxyed;
 		} catch(e) {
 			if (!stoped) {
@@ -191,7 +212,7 @@ export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Opt
 	let value: Value<T>;
 	({value, trigger} = createValue<T, Value<T>>(
 		() => computed || stoped ? proxyed : run(),
-		setValue && (v => setValue(proxy ? getValue(v) : v)),
+		setValue && (v => setValue(proxy ? recover(v) : v)),
 		() => {
 			if (stoped) { return; }
 			stoped = true;
@@ -203,12 +224,14 @@ export function computed<T>(getter: () => T, setter?: ((value: T) => void) | Opt
 
 }
 
-export function merge<T, V extends Value<T> = Value<T>>(cb: WatchCallback<T, V>): WatchCallback<T, V> {
+export function merge<T, V extends Value<T> = Value<T>>(
+	cb: WatchCallback<T, V>
+): WatchCallback<T, V> {
 	let oldValue: any;
 	let runed = false;
 	return (v, stoped) => {
 		if (stoped) { return cb(v, stoped); }
-		const newValue = getValue(v());
+		const newValue = recover(v());
 		if (newValue === oldValue && runed) { return; }
 		runed = true;
 		oldValue = newValue;
@@ -218,11 +241,17 @@ export function merge<T, V extends Value<T> = Value<T>>(cb: WatchCallback<T, V>)
 
 type OffValue<V> = V extends Value<infer T> ? T : V;
 
-export function mix<T extends object>(source: T): { [K in keyof T]: OffValue<T[K]>; } {
+export function mix<T extends object>(
+	source: T
+): { [K in keyof T]: OffValue<T[K]>; } {
 	for (const k of Reflect.ownKeys(source)) {
 		const descriptor = Reflect.getOwnPropertyDescriptor(source, k);
 		if (!descriptor) { continue; }
-		if ('get' in descriptor || 'set' in descriptor || !('value' in descriptor)) { continue; }
+		if (
+			!('value' in descriptor)
+			|| 'get' in descriptor
+			|| 'set' in descriptor
+		) { continue; }
 		const value = descriptor.value;
 		if (!isValue(value)) { continue; }
 		descriptor.get = () => value.value;
