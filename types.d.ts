@@ -1,18 +1,18 @@
 
 /*!
- * monitorable v0.1.0-alpha.0
+ * monitorable v0.1.0-alpha.2
  * (c) 2020 Fierflame
  * @license MIT
  */
 
 /**
  * 获取被代理对象
- * @param value 要被代理的对象
+ * @param obj  要被代理的对象
  * @param nest 递归代理的层数
  */
-declare function getProxy<T>(value: T, nest?: number | boolean): T;
+declare function encase<T>(value: T, nest?: number | boolean): T;
 /** 获取被代理的原始值 */
-declare function getValue<T>(v: T): T;
+declare function recover<T>(v: T): T;
 declare function equal(a: any, b: any): boolean;
 declare type ReadMap = Map<object | Function, Set<string | boolean | symbol>>;
 /**
@@ -107,6 +107,7 @@ declare function printError(info: any, print: true): void;
 declare function printError(info: any): void;
 /** 回调函数安全化处理 */
 declare function safeify<T extends any[]>(fn: (...p: T) => void): (...p: T) => void;
-declare function getMepValue<K, V>(map: Map<K, V>, key: K, def: () => V): V;
+declare function getMapValue<K, V>(map: Map<K, V>, key: K, def: () => V): V;
+declare function getMapValue<K extends object, V>(map: WeakMap<K, V>, key: K, def: () => V): V;
 
-export { CancelWatch, Executable, Options, ReadMap, Value, WatchCallback, computed, createExecutable, equal, getMepValue, getProxy, getValue, isValue, markChange, markRead, merge, mix, observe, printError, safeify, value, watchProp };
+export { CancelWatch, Executable, Options, ReadMap, Value, WatchCallback, computed, createExecutable, encase, equal, getMapValue, isValue, markChange, markRead, merge, mix, observe, printError, recover, safeify, value, watchProp };

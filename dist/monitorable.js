@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.0
+ * monitorable v0.1.0-alpha.2
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -38,7 +38,7 @@
 	    }
 	  };
 	}
-	function getMepValue(map, key, def) {
+	function getMapValue(map, key, def) {
 	  if (map.has(key)) {
 	    return map.get(key);
 	  }
@@ -48,7 +48,6 @@
 	  return value;
 	}
 
-	const ValueMap = new WeakMap();
 	/**
 	 * 判断对象是否可被代理
 	 */
@@ -56,31 +55,29 @@
 	function isProxyable(v) {
 	  return Boolean(v && ['object', 'function'].includes(typeof v));
 	}
+
+	let getValue;
 	/**
 	 * 获取被代理对象
-	 * @param value 要被代理的对象
+	 * @param obj  要被代理的对象
 	 * @param nest 递归代理的层数
 	 */
 
-
-	function getProxy(value, nest = 0) {
+	function encase(value, nest = 0) {
 	  if (!isProxyable(value)) {
 	    return value;
 	  }
 
-	  if (ValueMap.has(value)) {
-	    return value;
-	  }
-
+	  const original = recover(value);
 	  const nestLayer = nest === true ? Infinity : nest || 0;
-	  const proxy = new Proxy(value, {
+	  const proxy = new Proxy(original, {
 	    set(target, prop, value, receiver) {
 	      if (nest === false) {
 	        return Reflect.set(target, prop, value, receiver);
 	      }
 
 	      const has = Reflect.has(target, prop);
-	      const modified = Reflect.set(target, prop, value, getProxy(receiver));
+	      const modified = Reflect.set(target, prop, value, encase(receiver));
 
 	      if (!modified) {
 	        return modified;
@@ -94,15 +91,22 @@
 	    },
 
 	    get(target, prop, receiver) {
+	      if (getValue === proxy) {
+	        if (prop === '__monitorable__recover__') {
+	          getValue = original;
+	          return;
+	        }
+	      }
+
 	      if (nest === false) {
 	        return Reflect.get(target, prop, receiver);
 	      }
 
 	      markRead(target, prop);
-	      const value = Reflect.get(target, prop, getProxy(receiver));
+	      const value = Reflect.get(target, prop, encase(receiver));
 
 	      if (nestLayer > 0) {
-	        return getProxy(value, nestLayer - 1);
+	        return encase(value, nestLayer - 1);
 	      }
 
 	      return value;
@@ -132,28 +136,28 @@
 	      const value = Reflect.getPrototypeOf(target);
 
 	      if (nestLayer > 0) {
-	        return getProxy(value, nestLayer - 1);
+	        return encase(value, nestLayer - 1);
 	      }
 
 	      return value;
 	    },
 
-	    defineProperty(target, prop, attributes) {
+	    defineProperty(target, prop, attr) {
 	      if (nest === false) {
-	        return Reflect.defineProperty(target, prop, attributes);
+	        return Reflect.defineProperty(target, prop, attr);
 	      }
 
 	      let changed = true;
 
-	      if ('value' in attributes) {
-	        const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+	      if ('value' in attr) {
+	        const desc = Reflect.getOwnPropertyDescriptor(target, prop);
 
-	        if (descriptor && 'value' in descriptor && getValue(attributes.value) === getValue(descriptor.value)) {
+	        if (desc && 'value' in desc && recover(attr.value) === recover(desc.value)) {
 	          changed = false;
 	        }
 	      }
 
-	      const modified = Reflect.defineProperty(target, prop, attributes);
+	      const modified = Reflect.defineProperty(target, prop, attr);
 
 	      if (changed && modified) {
 	        markChange(target, prop);
@@ -210,11 +214,41 @@
 	}
 	/** 获取被代理的原始值 */
 
-	function getValue(v) {
-	  return ValueMap.get(v) || v;
+	function recover(v) {
+	  if (!v) {
+	    return v;
+	  }
+
+	  if (!isProxyable(v)) {
+	    return v;
+	  }
+
+	  let value = v;
+
+	  try {
+	    getValue = v;
+	    value = v.__monitorable__recover__;
+	  } catch (_unused) {}
+
+	  value = getValue;
+	  getValue = false;
+
+	  if (!value) {
+	    return v;
+	  }
+
+	  if (typeof value === 'object') {
+	    return value;
+	  }
+
+	  if (typeof value === 'function') {
+	    return value;
+	  }
+
+	  return v;
 	}
 	function equal(a, b) {
-	  return getValue(a) === getValue(b);
+	  return recover(a) === recover(b);
 	}
 
 	/** 已被读取的 */
@@ -230,7 +264,7 @@
 	    return;
 	  }
 
-	  const set = getMepValue(read, obj, () => new Set());
+	  const set = getMapValue(read, obj, () => new Set());
 
 	  if (typeof prop === 'number') {
 	    prop = String(prop);
@@ -275,7 +309,7 @@
 	    return;
 	  }
 
-	  if (!(typeof target === 'object' || typeof target === 'function')) {
+	  if (!isProxyable(target)) {
 	    return;
 	  }
 
@@ -324,7 +358,7 @@
 	  }
 
 	  const key = prop;
-	  target = getValue(target);
+	  target = recover(target);
 	  let map = watchList.get(target);
 
 	  if (!map) {
@@ -332,7 +366,7 @@
 	    watchList.set(target, map);
 	  }
 
-	  const list = getMepValue(map, key, () => new Set());
+	  const list = getMapValue(map, key, () => new Set());
 	  cb = safeify(cb);
 	  list.add(cb);
 	  let removed = false;
@@ -432,7 +466,7 @@
 	}
 	/** 触发监听 */
 
-	function createValue(getValue, setValue, stop = () => {}, change = () => {}) {
+	function createValue(recover, setValue, stop = () => {}, change = () => {}) {
 	  function set(v, marked = false) {
 	    if (!setValue) {
 	      return;
@@ -451,7 +485,7 @@
 
 	  function get() {
 	    markRead(value, 'value');
-	    return getValue();
+	    return recover();
 	  }
 
 	  const value = (...v) => {
@@ -576,7 +610,7 @@
 	    value
 	  } = createValue(() => proxyed, (v, mark) => {
 	    if (proxy) {
-	      v = getValue(v);
+	      v = recover(v);
 	    }
 
 	    if (v === source) {
@@ -584,7 +618,7 @@
 	    }
 
 	    source = v;
-	    proxyed = proxy ? getProxy(source) : source;
+	    proxyed = proxy ? encase(source) : source;
 	    mark();
 	  });
 	  value(def);
@@ -624,10 +658,10 @@
 	      source = executable();
 
 	      if (proxy) {
-	        source = getValue(source);
+	        source = recover(source);
 	      }
 
-	      proxyed = proxy ? getProxy(source) : source;
+	      proxyed = proxy ? encase(source) : source;
 	      return proxyed;
 	    } catch (e) {
 	      if (!stoped) {
@@ -642,7 +676,7 @@
 	  ({
 	    value,
 	    trigger
-	  } = createValue(() => computed || stoped ? proxyed : run(), setValue && (v => setValue(proxy ? getValue(v) : v)), () => {
+	  } = createValue(() => computed || stoped ? proxyed : run(), setValue && (v => setValue(proxy ? recover(v) : v)), () => {
 	    if (stoped) {
 	      return;
 	    }
@@ -665,7 +699,7 @@
 	      return cb(v, stoped);
 	    }
 
-	    const newValue = getValue(v());
+	    const newValue = recover(v());
 
 	    if (newValue === oldValue && runed) {
 	      return;
@@ -684,7 +718,7 @@
 	      continue;
 	    }
 
-	    if ('get' in descriptor || 'set' in descriptor || !('value' in descriptor)) {
+	    if (!('value' in descriptor) || 'get' in descriptor || 'set' in descriptor) {
 	      continue;
 	    }
 
@@ -710,10 +744,9 @@
 
 	exports.computed = computed;
 	exports.createExecutable = createExecutable;
+	exports.encase = encase;
 	exports.equal = equal;
-	exports.getMepValue = getMepValue;
-	exports.getProxy = getProxy;
-	exports.getValue = getValue;
+	exports.getMapValue = getMapValue;
 	exports.isValue = isValue;
 	exports.markChange = markChange;
 	exports.markRead = markRead;
@@ -721,6 +754,7 @@
 	exports.mix = mix;
 	exports.observe = observe;
 	exports.printError = printError;
+	exports.recover = recover;
 	exports.safeify = safeify;
 	exports.value = value;
 	exports.watchProp = watchProp;
