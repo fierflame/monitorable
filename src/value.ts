@@ -1,5 +1,6 @@
-import { markRead, markChange, recover, encase } from './state';
 import { safeify } from './utils';
+import { markRead, markChange } from './state';
+import { recover, encase } from './encase';
 import { createExecutable } from './executable';
 
 /** 取消监听的方法 */

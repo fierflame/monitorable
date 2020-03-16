@@ -21,6 +21,14 @@ export function printError(
 	console.error(info);
 }
 
+/**
+ * 判断对象是否可被代理
+ */
+export function encashable(v: any): v is object | Function {
+	return Boolean(v && ['object', 'function'].includes(typeof v));
+}
+
+
 /** 回调函数安全化处理 */
 export function safeify<T extends any[]>(
 	fn: (...p: T) => void

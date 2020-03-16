@@ -1,5 +1,6 @@
-import { observe, watchProp, ReadMap } from './state';
 import { safeify } from './utils';
+import { observe, watchProp, ReadMap } from './state';
+import { recover } from './encase';
 
 export interface Executable<T> {
 	(): T;
@@ -32,13 +33,16 @@ export function createExecutable<T>(
 		cancel();
 		const thisRead: ReadMap = new Map();
 		try {
-			return observe(fn, thisRead, true);
+			return observe(fn, thisRead);
+		} catch(e) {
+			thisRead.clear();
+			throw e;
 		} finally {
 			if (thisRead.size) {
 				cancelList = [];
 				for ( let [obj, props] of thisRead) {
 					for (const p of props) {
-						cancelList.push(watchProp(obj, p, trigger));
+						cancelList.push(watchProp(recover(obj), p, trigger));
 					}
 				}
 			} else {
