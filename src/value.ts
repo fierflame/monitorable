@@ -10,14 +10,14 @@ export interface CancelWatch {
 /** 可监听值 */
 export interface Value<T> {
 	(): T;
-	(v: T, mrak?: boolean): T;
+	(v: T, mark?: boolean): T;
 	value: T;
 	watch(cb: WatchCallback<T, this>): CancelWatch;
 	stop(): void;
 }
 /** 监听函数 */
 export interface WatchCallback<T, V extends Value<T> = Value<T>> {
-	(v: V, stoped: boolean): void;
+	(v: V, stopped: boolean): void;
 }
 const values = new WeakSet<Value<any>>();
 export function isValue(x: any): x is Value<any> {
@@ -109,10 +109,10 @@ function createValue<T, V extends Value<T> = Value<T>>(
 		}
 	};
 	values.add(value);
-	let stoped = false;
+	let stopped = false;
 	value.stop = () => {
-		if (stoped) { return; }
-		stoped = true;
+		if (stopped) { return; }
+		stopped = true;
 		stop();
 		trigger.stop();
 
@@ -134,14 +134,14 @@ export function value<T>(
 ): Value<T> {
 	const proxy = options === true || options && options.proxy;
 	let source: T;
-	let proxyed: T;
+	let proxyValue: T;
 	const { value } = createValue<T>(
-		() => proxyed,
+		() => proxyValue,
 		(v, mark) => {
 			if (proxy) { v = recover(v); }
 			if (v === source) { return; }
 			source = v;
-			proxyed = proxy ? encase(source) : source;
+			proxyValue = proxy ? encase(source) : source;
 			mark();
 		},
 	);
@@ -186,8 +186,8 @@ export function computed<T>(
 	const setValue = setter;
 	const proxy = options === true || options && options.proxy;
 	let source: T;
-	let proxyed: T;
-	let stoped = false;
+	let proxyValue: T;
+	let stopped = false;
 	let computed = false;
 	let trigger: Trigger | undefined;
 	const executable = createExecutable(getter, changed => {
@@ -201,10 +201,10 @@ export function computed<T>(
 		try {
 			source = executable();
 			if (proxy) { source = recover(source); }
-			proxyed = proxy ? encase(source) : source;
-			return proxyed;
+			proxyValue = proxy ? encase(source) : source;
+			return proxyValue;
 		} catch(e) {
-			if (!stoped) {
+			if (!stopped) {
 				computed = false;
 			}
 			throw e;
@@ -212,11 +212,11 @@ export function computed<T>(
 	}
 	let value: Value<T>;
 	({value, trigger} = createValue<T, Value<T>>(
-		() => computed || stoped ? proxyed : run(),
+		() => computed || stopped ? proxyValue : run(),
 		setValue && (v => setValue(proxy ? recover(v) : v)),
 		() => {
-			if (stoped) { return; }
-			stoped = true;
+			if (stopped) { return; }
+			stopped = true;
 			if (computed) { return; }
 			run();
 		},
@@ -229,14 +229,14 @@ export function merge<T, V extends Value<T> = Value<T>>(
 	cb: WatchCallback<T, V>
 ): WatchCallback<T, V> {
 	let oldValue: any;
-	let runed = false;
-	return (v, stoped) => {
-		if (stoped) { return cb(v, stoped); }
+	let ran = false;
+	return (v, stopped) => {
+		if (stopped) { return cb(v, stopped); }
 		const newValue = recover(v());
-		if (newValue === oldValue && runed) { return; }
-		runed = true;
+		if (newValue === oldValue && ran) { return; }
+		ran = true;
 		oldValue = newValue;
-		cb(v, stoped);
+		cb(v, stopped);
 	};
 }
 
