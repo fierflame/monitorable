@@ -41,7 +41,20 @@ export function safeify<T extends any[]>(
 		}
 	};
 }
-
+export function getIndexes(
+	target: any,
+	prop: string | number | symbol | boolean,
+): [object | Function, string | boolean | symbol] | undefined {
+	if (!target) { return undefined; }
+	if (typeof target !== 'function' && typeof target !== 'object') {
+		return undefined;
+	}
+	if (typeof prop === 'number') { return [target, String(prop)]; }
+	if (typeof prop === 'symbol') { return [target, prop]; }
+	if (typeof prop === 'string') { return [target, prop]; }
+	if (typeof prop === 'boolean') { return [target, prop]; }
+	return undefined;
+}
 export function getMapValue<K, V>(
 	map: Map<K, V>,
 	key: K,

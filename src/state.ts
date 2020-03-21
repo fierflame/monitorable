@@ -1,4 +1,4 @@
-import { safeify, getMapValue, encashable } from './utils';
+import { safeify, getMapValue, getIndexes } from './utils';
 
 export type ReadMap =  Map<
 	object | Function,
@@ -14,14 +14,14 @@ let read: ReadMap | undefined;
  * @param prop 要标记的属性
  */
 export function markRead(
-	obj: object | Function,
+	target: object | Function,
 	prop: string | number | boolean | symbol,
 ) {
 	if (!read) { return; }
-	if (typeof prop === 'number') {
-		prop = String(prop);
-	}
-	getMapValue(read, obj, () => new Set()).add(prop);
+	const indexes = getIndexes(target, prop);
+	if (!indexes) { return; }
+	[target, prop] = indexes;
+	getMapValue(read, target, () => new Set()).add(prop);
 }
 /**
  * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
@@ -93,25 +93,18 @@ export function markChange(
 	target: object | Function,
 	prop: string | number | boolean | symbol,
 ) {
-	if (!target) { return; }
-	if (!encashable(target)) { return; }
-	if (typeof prop === 'number') {
-		prop = String(prop);
-	} else if (
-		typeof prop !== 'symbol'
-		&& typeof prop !== 'string'
-		&& typeof prop !== 'boolean'
-	) {
-		return;
-	}
+
+	const indexes = getIndexes(target, prop);
+	if (!indexes) { return; }
+	[target, prop] = indexes;
 	if (wait(target, prop)) { return; }
 	execWatch(target, prop);
 }
 
 /**
- * 监听对象属性的变化
- * @param target 要监听的对象
- * @param prop   要监听的属性名 特别的，false 表示原型，true 表示成员
+ * 观察对象属性的变化
+ * @param target 要观察的对象
+ * @param prop   要观察的属性名 特别的，false 表示原型，true 表示成员
  * @param fn     属性改变后触发的函数
  */
 export function watchProp(
@@ -119,23 +112,11 @@ export function watchProp(
 	prop: string | number | boolean | symbol,
 	cb: () => void,
 ): () => void {
-	if (!target) { return () => {}; }
-	if (!(typeof target === 'object' || typeof target === 'function')) {
-		return () => {};
-	}
-	if (typeof cb !== 'function') {
-		return  () => {};
-	}
-	if (typeof prop === 'number') {
-		prop = String(prop);
-	}
-	if (
-		typeof prop !== 'symbol'
-		&& typeof prop !== 'string'
-		&& typeof prop !== 'boolean'
-	) {
-		return () => {};
-	}
+	if (typeof cb !== 'function') { return  () => {}; }
+	const indexes = getIndexes(target, prop);
+	if (!indexes) { return () => {}; }
+	[target, prop] = indexes;
+
 	const key = prop;
 	let map = watchList.get(target);
 	if (!map) {
