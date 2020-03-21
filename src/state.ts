@@ -18,11 +18,10 @@ export function markRead(
 	prop: string | number | boolean | symbol,
 ) {
 	if (!read) { return; }
-	const set = getMapValue(read, obj, () => new Set());
 	if (typeof prop === 'number') {
 		prop = String(prop);
 	}
-	set.add(prop);
+	getMapValue(read, obj, () => new Set()).add(prop);
 }
 /**
  * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
@@ -45,6 +44,46 @@ const watchList = new WeakMap<
 	object | Function,
 	Map<string | boolean | symbol, Set<() => void>>
 >();
+
+function execWatch(
+	target: object | Function,
+	prop: string | boolean | symbol,
+) {
+	const watch = watchList.get(target)?.get(prop);
+	if (!watch) { return; }
+	[...watch].forEach(w => w());
+}
+
+let waitList: ReadMap | undefined;
+
+function run(list: ReadMap) {
+	for (const [target, set] of list.entries()) {
+		for (const prop of set) {
+			execWatch(target, prop);
+		}
+	}
+}
+export function postpone<T>(f: () => T, priority?: boolean): T {
+	const list = !priority && waitList || new Map();
+	const old = waitList;
+	waitList = list;
+	try {
+		return f();
+	} finally {
+		waitList = old;
+		if (list !== waitList) { run(list); }
+	}
+}
+
+function wait(
+	target: object | Function,
+	prop: string | boolean | symbol,
+) {
+	if (!waitList) { return false; }
+	getMapValue(waitList, target, () => new Set()).add(prop);
+	return true;
+}
+
 /**
  * 标记属性的修改，同时触发监听函数
  * @param target 要标记的对象
@@ -55,9 +94,7 @@ export function markChange(
 	prop: string | number | boolean | symbol,
 ) {
 	if (!target) { return; }
-	if (!encashable(target)) {
-		return;
-	}
+	if (!encashable(target)) { return; }
 	if (typeof prop === 'number') {
 		prop = String(prop);
 	} else if (
@@ -67,12 +104,8 @@ export function markChange(
 	) {
 		return;
 	}
-
-	const watch = watchList.get(target)?.get?.(prop);
-	if (!watch) { return; }
-	for (const w of [...watch]) {
-		w();
-	}
+	if (wait(target, prop)) { return; }
+	execWatch(target, prop);
 }
 
 /**
