@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.2
+ * monitorable v0.1.0-alpha.4
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -9,7 +9,7 @@
 	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
 	typeof define === 'function' && define.amd ? define(['exports'], factory) :
 	(global = global || self, factory(global.Monitorable = {}));
-}(this, function (exports) { 'use strict';
+}(this, (function (exports) { 'use strict';
 
 	let printErrorLog;
 	/** 设置或移除错误打印函数 */
@@ -27,6 +27,13 @@
 
 	  console.error(info);
 	}
+	/**
+	 * 判断对象是否可被代理
+	 */
+
+	function encashable(v) {
+	  return Boolean(v && ['object', 'function'].includes(typeof v));
+	}
 	/** 回调函数安全化处理 */
 
 	function safeify(fn) {
@@ -38,6 +45,33 @@
 	    }
 	  };
 	}
+	function getIndexes(target, prop) {
+	  if (!target) {
+	    return undefined;
+	  }
+
+	  if (typeof target !== 'function' && typeof target !== 'object') {
+	    return undefined;
+	  }
+
+	  if (typeof prop === 'number') {
+	    return [target, String(prop)];
+	  }
+
+	  if (typeof prop === 'symbol') {
+	    return [target, prop];
+	  }
+
+	  if (typeof prop === 'string') {
+	    return [target, prop];
+	  }
+
+	  if (typeof prop === 'boolean') {
+	    return [target, prop];
+	  }
+
+	  return undefined;
+	}
 	function getMapValue(map, key, def) {
 	  if (map.has(key)) {
 	    return map.get(key);
@@ -48,11 +82,178 @@
 	  return value;
 	}
 
+	/** 已被读取的 */
+	let read;
+	/**
+	 * 标记已读状态
+	 * @param obj  要标记的对象
+	 * @param prop 要标记的属性
+	 */
+
+	function markRead(target, prop) {
+	  if (!read) {
+	    return;
+	  }
+
+	  const indexes = getIndexes(target, prop);
+
+	  if (!indexes) {
+	    return;
+	  }
+
+	  [target, prop] = indexes;
+	  getMapValue(read, target, () => new Set()).add(prop);
+	}
+	/**
+	 * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
+	 * @param fn 要执行的含糊
+	 * @param map 用于存储被读取对象的 map
+	 * @param clear 是否在发送错误时清空 map
+	 */
+
+	function observe(fn, map) {
+	  const oldRead = read;
+	  read = map;
+
+	  try {
+	    return fn();
+	  } finally {
+	    read = oldRead;
+	  }
+	}
+	const watchList = new WeakMap();
+
+	function execWatch(target, prop) {
+	  var _watchList$get;
+
+	  const watch = (_watchList$get = watchList.get(target)) === null || _watchList$get === void 0 ? void 0 : _watchList$get.get(prop);
+
+	  if (!watch) {
+	    return;
+	  }
+
+	  [...watch].forEach(w => w());
+	}
+
+	let waitList;
+
+	function run(list) {
+	  for (const [target, set] of list.entries()) {
+	    for (const prop of set) {
+	      execWatch(target, prop);
+	    }
+	  }
+	}
+
+	function postpone(f, priority) {
+	  const list = !priority && waitList || new Map();
+	  const old = waitList;
+	  waitList = list;
+
+	  try {
+	    return f();
+	  } finally {
+	    waitList = old;
+
+	    if (list !== waitList) {
+	      run(list);
+	    }
+	  }
+	}
+
+	function wait(target, prop) {
+	  if (!waitList) {
+	    return false;
+	  }
+
+	  getMapValue(waitList, target, () => new Set()).add(prop);
+	  return true;
+	}
+	/**
+	 * 标记属性的修改，同时触发监听函数
+	 * @param target 要标记的对象
+	 * @param prop   要标记的属性 特别的，false 表示原型，true 表示成员
+	 */
+
+
+	function markChange(target, prop) {
+	  const indexes = getIndexes(target, prop);
+
+	  if (!indexes) {
+	    return;
+	  }
+
+	  [target, prop] = indexes;
+
+	  if (wait(target, prop)) {
+	    return;
+	  }
+
+	  execWatch(target, prop);
+	}
+	/**
+	 * 观察对象属性的变化
+	 * @param target 要观察的对象
+	 * @param prop   要观察的属性名 特别的，false 表示原型，true 表示成员
+	 * @param fn     属性改变后触发的函数
+	 */
+
+	function watchProp(target, prop, cb) {
+	  if (typeof cb !== 'function') {
+	    return () => {};
+	  }
+
+	  const indexes = getIndexes(target, prop);
+
+	  if (!indexes) {
+	    return () => {};
+	  }
+
+	  [target, prop] = indexes;
+	  const key = prop;
+	  let map = watchList.get(target);
+
+	  if (!map) {
+	    map = new Map();
+	    watchList.set(target, map);
+	  }
+
+	  const list = getMapValue(map, key, () => new Set());
+	  cb = safeify(cb);
+	  list.add(cb);
+	  let removed = false;
+	  return () => {
+	    if (removed) {
+	      return;
+	    }
+
+	    removed = true; // 从当前列表中移除
+
+	    list.delete(cb); // 从属性关联中删除
+
+	    if (list.size) {
+	      return;
+	    }
+
+	    if (!map) {
+	      return;
+	    }
+
+	    map.delete(key); // 映射列表中删除
+
+	    if (map.size) {
+	      return;
+	    }
+
+	    watchList.delete(target);
+	  };
+	}
+
 	/**
 	 * 判断对象是否可被代理
 	 */
 
-	function isProxyable(v) {
+	function encashable$1(v) {
 	  return Boolean(v && ['object', 'function'].includes(typeof v));
 	}
 
@@ -64,7 +265,7 @@
 	 */
 
 	function encase(value, nest = 0) {
-	  if (!isProxyable(value)) {
+	  if (!encashable$1(value)) {
 	    return value;
 	  }
 
@@ -219,7 +420,7 @@
 	    return v;
 	  }
 
-	  if (!isProxyable(v)) {
+	  if (!encashable$1(v)) {
 	    return v;
 	  }
 
@@ -251,149 +452,70 @@
 	  return recover(a) === recover(b);
 	}
 
-	/** 已被读取的 */
-	let read;
-	/**
-	 * 标记已读状态
-	 * @param obj  要标记的对象
-	 * @param prop 要标记的属性
-	 */
-
-	function markRead(obj, prop) {
-	  if (!read) {
-	    return;
-	  }
-
-	  const set = getMapValue(read, obj, () => new Set());
-
-	  if (typeof prop === 'number') {
-	    prop = String(prop);
-	  }
-
-	  set.add(prop);
-	}
-	/**
-	 * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
-	 * @param fn 要执行的含糊
-	 * @param map 用于存储被读取对象的 map
-	 * @param clear 是否在发送错误时清空 map
-	 */
-
-	function observe(fn, map = new Map(), clear = false) {
-	  const oldRead = read;
-	  read = map;
-
-	  try {
-	    return fn();
-	  } catch (e) {
-	    if (clear) {
-	      map.clear();
-	    }
-
-	    throw e;
-	  } finally {
-	    read = oldRead;
-	  }
-	}
-	const watchList = new WeakMap();
-	/**
-	 * 标记属性的修改，同时触发监听函数
-	 * @param target 要标记的对象
-	 * @param prop   要标记的属性 特别的，false 表示原型，true 表示成员
-	 */
-
-	function markChange(target, prop) {
-	  var _watchList$get, _watchList$get$get;
-
-	  if (!target) {
-	    return;
-	  }
-
-	  if (!isProxyable(target)) {
-	    return;
-	  }
-
-	  if (typeof prop === 'number') {
-	    prop = String(prop);
-	  } else if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') {
-	    return;
-	  }
-
-	  const watch = (_watchList$get = watchList.get(target)) === null || _watchList$get === void 0 ? void 0 : (_watchList$get$get = _watchList$get.get) === null || _watchList$get$get === void 0 ? void 0 : _watchList$get$get.call(_watchList$get, prop);
-
-	  if (!watch) {
-	    return;
-	  }
-
-	  for (const w of [...watch]) {
-	    w();
-	  }
-	}
-	/**
-	 * 监听对象属性的变化
-	 * @param target 要监听的对象
-	 * @param prop   要监听的属性名 特别的，false 表示原型，true 表示成员
-	 * @param fn     属性改变后触发的函数
-	 */
-
-	function watchProp(target, prop, cb) {
-	  if (!target) {
-	    return () => {};
-	  }
-
-	  if (!(typeof target === 'object' || typeof target === 'function')) {
-	    return () => {};
-	  }
-
-	  if (typeof cb !== 'function') {
-	    return () => {};
-	  }
-
-	  if (typeof prop === 'number') {
-	    prop = String(prop);
-	  }
-
-	  if (typeof prop !== 'symbol' && typeof prop !== 'string' && typeof prop !== 'boolean') {
-	    return () => {};
-	  }
-
-	  const key = prop;
-	  target = recover(target);
-	  let map = watchList.get(target);
-
-	  if (!map) {
-	    map = new Map();
-	    watchList.set(target, map);
-	  }
-
-	  const list = getMapValue(map, key, () => new Set());
+	function exec(fn, cb, resultOnly) {
 	  cb = safeify(cb);
-	  list.add(cb);
-	  let removed = false;
-	  return () => {
-	    if (removed) {
+	  let cancelList;
+	  /** 取消监听 */
+
+	  function cancel() {
+	    if (!cancelList) {
+	      return false;
+	    }
+
+	    const list = cancelList;
+	    cancelList = undefined;
+	    list.forEach(f => f());
+	    return true;
+	  }
+
+	  function trigger() {
+	    if (!cancel()) {
 	      return;
 	    }
 
-	    removed = true; // 从当前列表中移除
+	    cb(true);
+	  }
+	  const thisRead = new Map();
+	  const result = observe(fn, thisRead);
 
-	    list.delete(cb); // 从属性关联中删除
+	  if (!thisRead.size) {
+	    cb(false);
 
-	    if (list.size) {
-	      return;
+	    if (resultOnly) {
+	      return result;
 	    }
 
-	    if (!map) {
-	      return;
+	    return {
+	      result,
+
+	      stop() {}
+
+	    };
+	  }
+
+	  cancelList = [];
+
+	  for (let [obj, props] of thisRead) {
+	    for (const p of props) {
+	      cancelList.push(watchProp(recover(obj), p, trigger));
+	    }
+	  }
+
+	  if (resultOnly) {
+	    return result;
+	  }
+
+	  return {
+	    result,
+
+	    stop() {
+	      if (!cancel()) {
+	        return;
+	      }
+
+	      cb(false);
 	    }
 
-	    map.delete(key); // 映射列表中删除
-
-	    if (map.size) {
-	      return;
-	    }
-
-	    watchList.delete(target);
 	  };
 	}
 
@@ -431,14 +553,17 @@
 	    const thisRead = new Map();
 
 	    try {
-	      return observe(fn, thisRead, true);
+	      return observe(fn, thisRead);
+	    } catch (e) {
+	      thisRead.clear();
+	      throw e;
 	    } finally {
 	      if (thisRead.size) {
 	        cancelList = [];
 
 	        for (let [obj, props] of thisRead) {
 	          for (const p of props) {
-	            cancelList.push(watchProp(obj, p, trigger));
+	            cancelList.push(watchProp(recover(obj), p, trigger));
 	          }
 	        }
 	      } else {
@@ -578,14 +703,14 @@
 	  };
 
 	  values.add(value);
-	  let stoped = false;
+	  let stopped = false;
 
 	  value.stop = () => {
-	    if (stoped) {
+	    if (stopped) {
 	      return;
 	    }
 
-	    stoped = true;
+	    stopped = true;
 	    stop();
 	    trigger.stop();
 	  };
@@ -605,10 +730,10 @@
 	function value(def, options) {
 	  const proxy = options === true || options && options.proxy;
 	  let source;
-	  let proxyed;
+	  let proxyValue;
 	  const {
 	    value
-	  } = createValue(() => proxyed, (v, mark) => {
+	  } = createValue(() => proxyValue, (v, mark) => {
 	    if (proxy) {
 	      v = recover(v);
 	    }
@@ -618,7 +743,7 @@
 	    }
 
 	    source = v;
-	    proxyed = proxy ? encase(source) : source;
+	    proxyValue = proxy ? encase(source) : source;
 	    mark();
 	  });
 	  value(def);
@@ -639,8 +764,8 @@
 	  const setValue = setter;
 	  const proxy = options === true || options && options.proxy;
 	  let source;
-	  let proxyed;
-	  let stoped = false;
+	  let proxyValue;
+	  let stopped = false;
 	  let computed = false;
 	  let trigger;
 	  const executable = createExecutable(getter, changed => {
@@ -661,10 +786,10 @@
 	        source = recover(source);
 	      }
 
-	      proxyed = proxy ? encase(source) : source;
-	      return proxyed;
+	      proxyValue = proxy ? encase(source) : source;
+	      return proxyValue;
 	    } catch (e) {
-	      if (!stoped) {
+	      if (!stopped) {
 	        computed = false;
 	      }
 
@@ -676,12 +801,12 @@
 	  ({
 	    value,
 	    trigger
-	  } = createValue(() => computed || stoped ? proxyed : run(), setValue && (v => setValue(proxy ? recover(v) : v)), () => {
-	    if (stoped) {
+	  } = createValue(() => computed || stopped ? proxyValue : run(), setValue && (v => setValue(proxy ? recover(v) : v)), () => {
+	    if (stopped) {
 	      return;
 	    }
 
-	    stoped = true;
+	    stopped = true;
 
 	    if (computed) {
 	      return;
@@ -693,21 +818,21 @@
 	}
 	function merge(cb) {
 	  let oldValue;
-	  let runed = false;
-	  return (v, stoped) => {
-	    if (stoped) {
-	      return cb(v, stoped);
+	  let ran = false;
+	  return (v, stopped) => {
+	    if (stopped) {
+	      return cb(v, stopped);
 	    }
 
 	    const newValue = recover(v());
 
-	    if (newValue === oldValue && runed) {
+	    if (newValue === oldValue && ran) {
 	      return;
 	    }
 
-	    runed = true;
+	    ran = true;
 	    oldValue = newValue;
-	    cb(v, stoped);
+	    cb(v, stopped);
 	  };
 	}
 	function mix(source) {
@@ -745,7 +870,10 @@
 	exports.computed = computed;
 	exports.createExecutable = createExecutable;
 	exports.encase = encase;
+	exports.encashable = encashable;
 	exports.equal = equal;
+	exports.exec = exec;
+	exports.getIndexes = getIndexes;
 	exports.getMapValue = getMapValue;
 	exports.isValue = isValue;
 	exports.markChange = markChange;
@@ -753,6 +881,7 @@
 	exports.merge = merge;
 	exports.mix = mix;
 	exports.observe = observe;
+	exports.postpone = postpone;
 	exports.printError = printError;
 	exports.recover = recover;
 	exports.safeify = safeify;
@@ -761,5 +890,5 @@
 
 	Object.defineProperty(exports, '__esModule', { value: true });
 
-}));
+})));
 //# sourceMappingURL=monitorable.js.map

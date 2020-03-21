@@ -33,7 +33,6 @@ export default [
 				sourcemap: true,
 				format: 'cjs',
 				banner,
-				// exports: 'default',
 			},
 			{
 				file: `dist/${ name }.js`,
@@ -41,7 +40,6 @@ export default [
 				format: 'umd',
 				name: GlobalName,
 				banner,
-				// exports: 'default',
 			},
 		],
 		plugins: [
@@ -60,19 +58,11 @@ export default [
 				banner,
 			},
 			{
-				file: `dist/${ name }.common.min.js`,
-				sourcemap: true,
-				format: 'cjs',
-				banner,
-				// exports: 'default',
-			},
-			{
 				file: `dist/${ name }.min.js`,
 				sourcemap: true,
 				format: 'umd',
 				name: GlobalName,
 				banner,
-				// exports: 'default',
 			},
 		],
 		plugins: [

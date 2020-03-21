@@ -1,8 +1,10 @@
 {
   "name": "monitorable",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.4",
   "main": "dist/monitorable.common.js",
   "module": "dist/monitorable.esm.js",
+  "unpkg": "dist/monitorable.js",
+  "jsdelivr": "dist/monitorable.js",
   "scripts": {
     "build": "rollup -c",
     "tsc": "tsc -p tsconfig.json",
