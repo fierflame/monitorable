@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.4
+ * monitorable v0.1.0-alpha.5
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -98,19 +98,22 @@ function markRead(target, prop) {
   [target, prop] = indexes;
   getMapValue(read, target, () => new Set()).add(prop);
 }
+
 /**
  * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
- * @param clear 是否在发送错误时清空 map
  */
-
-function observe(fn, map) {
+function observe(fn, map, options) {
   const oldRead = read;
   read = map;
 
   try {
-    return fn();
+    if (!(options === null || options === void 0 ? void 0 : options.postpone)) {
+      return fn();
+    }
+
+    return postpone(fn, options.postpone === 'priority');
   } finally {
     read = oldRead;
   }
@@ -446,9 +449,11 @@ function equal(a, b) {
   return recover(a) === recover(b);
 }
 
-function exec(fn, cb, resultOnly) {
+function exec(fn, cb, options) {
   cb = safeify(cb);
   let cancelList;
+  const resultOnly = options === true || typeof options === 'object' && (options === null || options === void 0 ? void 0 : options.resultOnly);
+  const postpone = typeof options === 'object' && (options === null || options === void 0 ? void 0 : options.postpone);
   /** 取消监听 */
 
   function cancel() {
@@ -470,7 +475,9 @@ function exec(fn, cb, resultOnly) {
     cb(true);
   }
   const thisRead = new Map();
-  const result = observe(fn, thisRead);
+  const result = observe(fn, thisRead, {
+    postpone
+  });
 
   if (!thisRead.size) {
     cb(false);
@@ -518,7 +525,7 @@ function exec(fn, cb, resultOnly) {
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-function createExecutable(fn, cb) {
+function createExecutable(fn, cb, options) {
   cb = safeify(cb);
   let cancelList;
   /** 取消监听 */
@@ -547,7 +554,7 @@ function createExecutable(fn, cb) {
     const thisRead = new Map();
 
     try {
-      return observe(fn, thisRead);
+      return observe(fn, thisRead, options);
     } catch (e) {
       thisRead.clear();
       throw e;
@@ -743,13 +750,9 @@ function value(def, options) {
   value(def);
   return value;
 }
-/**
- * 创建计算值
- * @param getter 取值方法
- * @param options 选项
- */
-
 function computed(getter, setter, options) {
+  var _options;
+
   if (typeof setter !== 'function') {
     options = setter;
     setter = undefined;
@@ -757,6 +760,7 @@ function computed(getter, setter, options) {
 
   const setValue = setter;
   const proxy = options === true || options && options.proxy;
+  const postpone = typeof options === 'object' && ((_options = options) === null || _options === void 0 ? void 0 : _options.postpone);
   let source;
   let proxyValue;
   let stopped = false;
@@ -768,6 +772,8 @@ function computed(getter, setter, options) {
     if (changed && trigger) {
       trigger();
     }
+  }, {
+    postpone
   });
 
   function run() {

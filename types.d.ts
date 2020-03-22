@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.4
+ * monitorable v0.1.0-alpha.5
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -28,13 +28,15 @@ declare type ReadMap = Map<object | Function, Set<string | boolean | symbol>>;
  * @param prop 要标记的属性
  */
 declare function markRead(target: object | Function, prop: string | number | boolean | symbol): void;
+interface ObserveOptions {
+    postpone?: boolean | 'priority';
+}
 /**
  * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
- * @param clear 是否在发送错误时清空 map
  */
-declare function observe<T>(fn: () => T, map: ReadMap): T;
+declare function observe<T>(fn: () => T, map: ReadMap, options?: ObserveOptions): T;
 declare function postpone<T>(f: () => T, priority?: boolean): T;
 /**
  * 标记属性的修改，同时触发监听函数
@@ -64,6 +66,10 @@ interface ExecResult<T> {
     result: T;
     stop(): void;
 }
+interface ExecOptions {
+    resultOnly?: boolean;
+    postpone?: boolean | 'priority';
+}
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
@@ -71,18 +77,27 @@ interface ExecResult<T> {
  */
 declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, resultOnly?: false): ExecResult<T>;
 declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, resultOnly: true): T;
-declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, resultOnly?: boolean): ExecResult<T> | T;
+declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, options?: ExecOptions & {
+    resultOnly?: false;
+}): ExecResult<T>;
+declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, options: ExecOptions & {
+    resultOnly: true;
+}): T;
+declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, options?: boolean | ExecOptions): ExecResult<T> | T;
 
 interface Executable<T> {
     (): T;
     stop(): void;
+}
+interface ExecutableOptions {
+    postpone?: boolean | 'priority';
 }
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-declare function createExecutable<T>(fn: () => T, cb: (changed: boolean) => void): Executable<T>;
+declare function createExecutable<T>(fn: () => T, cb: (changed: boolean) => void, options?: ExecutableOptions): Executable<T>;
 
 /** 取消监听的方法 */
 interface CancelWatch {
@@ -110,24 +125,28 @@ interface Options {
  * @param options 选项
  */
 declare function value<T>(value: T, options?: Options | boolean): Value<T>;
+interface ComputedOptions {
+    postpone?: boolean | 'priority';
+    proxy?: boolean;
+}
 /**
  * 创建计算值
  * @param getter 取值方法
  * @param options 选项
  */
-declare function computed<T>(getter: () => T, options?: Options | boolean): Value<T>;
+declare function computed<T>(getter: () => T, options?: ComputedOptions | boolean): Value<T>;
 /**
  * 创建可赋值计算值
  * @param getter 取值方法
  * @param setter 复制方法
  * @param options 选项
  */
-declare function computed<T>(getter: () => T, setter: (value: T) => void, options?: Options | boolean): Value<T>;
-declare function computed<T>(getter: () => T, setter?: ((value: T) => void) | Options | boolean, options?: Options | boolean): Value<T>;
+declare function computed<T>(getter: () => T, setter: (value: T) => void, options?: ComputedOptions | boolean): Value<T>;
+declare function computed<T>(getter: () => T, setter?: ((value: T) => void) | ComputedOptions | boolean, options?: ComputedOptions | boolean): Value<T>;
 declare function merge<T, V extends Value<T> = Value<T>>(cb: WatchCallback<T, V>): WatchCallback<T, V>;
 declare type OffValue<V> = V extends Value<infer T> ? T : V;
 declare function mix<T extends object>(source: T): {
     [K in keyof T]: OffValue<T[K]>;
 };
 
-export { CancelWatch, ExecResult, Executable, Options, ReadMap, Value, WatchCallback, computed, createExecutable, encase, encashable, equal, exec, getIndexes, getMapValue, isValue, markChange, markRead, merge, mix, observe, postpone, printError, recover, safeify, value, watchProp };
+export { CancelWatch, ComputedOptions, ExecOptions, ExecResult, Executable, ExecutableOptions, ObserveOptions, Options, ReadMap, Value, WatchCallback, computed, createExecutable, encase, encashable, equal, exec, getIndexes, getMapValue, isValue, markChange, markRead, merge, mix, observe, postpone, printError, recover, safeify, value, watchProp };
