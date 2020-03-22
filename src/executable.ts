@@ -6,6 +6,9 @@ export interface Executable<T> {
 	(): T;
 	stop(): void;
 }
+export interface ExecutableOptions {
+	postpone?: boolean | 'priority';
+}
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
@@ -14,6 +17,7 @@ export interface Executable<T> {
 export function createExecutable<T>(
 	fn: () => T,
 	cb: (changed: boolean) => void,
+	options?: ExecutableOptions,
 ): Executable<T> {
 	cb = safeify(cb);
 	let cancelList: (() => void)[] | undefined;
@@ -33,7 +37,7 @@ export function createExecutable<T>(
 		cancel();
 		const thisRead: ReadMap = new Map();
 		try {
-			return observe(fn, thisRead);
+			return observe(fn, thisRead, options);
 		} catch(e) {
 			thisRead.clear();
 			throw e;

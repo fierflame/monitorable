@@ -149,6 +149,10 @@ export function value<T>(
 	return value;
 }
 
+export interface ComputedOptions {
+	postpone?: boolean | 'priority';
+	proxy?: boolean;
+}
 /**
  * 创建计算值
  * @param getter 取值方法
@@ -156,7 +160,7 @@ export function value<T>(
  */
 export function computed<T>(
 	getter: () => T,
-	options?: Options | boolean,
+	options?: ComputedOptions | boolean,
 ): Value<T>;
 /**
  * 创建可赋值计算值
@@ -167,17 +171,17 @@ export function computed<T>(
 export function computed<T>(
 	getter: () => T,
 	setter: (value: T) => void,
-	options?: Options | boolean,
+	options?: ComputedOptions | boolean,
 ): Value<T>;
 export function computed<T>(
 	getter: () => T,
-	setter?: ((value: T) => void) | Options | boolean,
-	options?: Options | boolean,
+	setter?: ((value: T) => void) | ComputedOptions | boolean,
+	options?: ComputedOptions | boolean,
 ): Value<T>;
 export function computed<T>(
 	getter: () => T,
-	setter?: ((value: T) => void) | Options | boolean,
-	options?: Options | boolean,
+	setter?: ((value: T) => void) | ComputedOptions | boolean,
+	options?: ComputedOptions | boolean,
 ): Value<T> {
 	if (typeof setter !== 'function') {
 		options = setter;
@@ -185,6 +189,7 @@ export function computed<T>(
 	}
 	const setValue = setter;
 	const proxy = options === true || options && options.proxy;
+	const postpone = typeof options === 'object' && options?.postpone;
 	let source: T;
 	let proxyValue: T;
 	let stopped = false;
@@ -195,7 +200,7 @@ export function computed<T>(
 		if (changed  && trigger) {
 			trigger();
 		}
-	});
+	}, { postpone });
 	function run() {
 		computed = true;
 		try {

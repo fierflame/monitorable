@@ -6,6 +6,10 @@ export interface ExecResult<T> {
 	result: T;
 	stop(): void;
 }
+export interface ExecOptions {
+	resultOnly?: boolean;
+	postpone?: boolean | 'priority';
+}
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
@@ -24,15 +28,28 @@ export function exec<T>(
 export function exec<T>(
 	fn: () => T,
 	cb: (changed: boolean) => void,
-	resultOnly?: boolean,
+	options?: ExecOptions & {resultOnly?: false},
+): ExecResult<T>;
+export function exec<T>(
+	fn: () => T,
+	cb: (changed: boolean) => void,
+	options: ExecOptions & {resultOnly: true},
+): T;
+export function exec<T>(
+	fn: () => T,
+	cb: (changed: boolean) => void,
+	options?: boolean | ExecOptions,
 ): ExecResult<T> | T;
 export function exec<T>(
 	fn: () => T,
 	cb: (changed: boolean) => void,
-	resultOnly?: boolean,
+	options?: boolean | ExecOptions,
 ): ExecResult<T> | T {
 	cb = safeify(cb);
 	let cancelList: (() => void)[] | undefined;
+	const resultOnly = options === true
+		|| typeof options === 'object' && options?.resultOnly;
+	const postpone = typeof options === 'object' && options?.postpone;
 	/** 取消监听 */
 	function cancel() {
 		if (!cancelList) { return false; }
@@ -46,7 +63,7 @@ export function exec<T>(
 		cb(true);
 	};
 	const thisRead: ReadMap = new Map();
-	const result = observe(fn, thisRead);
+	const result = observe(fn, thisRead, { postpone });
 	if (!thisRead.size) {
 		cb(false);
 		if (resultOnly) { return result; }

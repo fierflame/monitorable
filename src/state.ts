@@ -23,17 +23,24 @@ export function markRead(
 	[target, prop] = indexes;
 	getMapValue(read, target, () => new Set()).add(prop);
 }
+export interface ObserveOptions {
+	postpone?: boolean | 'priority';
+}
 /**
  * 监听函数的执行，并将执行过程中读取的对象值设置到 map 中
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
- * @param clear 是否在发送错误时清空 map
  */
-export function observe<T>(fn: () => T, map: ReadMap): T {
+export function observe<T>(
+	fn: () => T,
+	map: ReadMap,
+	options?: ObserveOptions,
+): T {
 	const oldRead = read;
 	read = map;
 	try {
-		return fn();
+		if (!options?.postpone) { return fn(); }
+		return postpone(fn, options.postpone === 'priority');
 	} finally {
 		read = oldRead;
 	}
