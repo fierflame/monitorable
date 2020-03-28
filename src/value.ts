@@ -14,6 +14,8 @@ export interface Value<T> {
 	value: T;
 	watch(cb: WatchCallback<T, this>): CancelWatch;
 	stop(): void;
+	toString(...p: T extends {toString(...p: infer P): string} ? P : any): string;
+	valueOf(): T extends {valueOf(): infer R} ? R : T;
 }
 /** 监听函数 */
 export interface WatchCallback<T, V extends Value<T> = Value<T>> {
@@ -35,6 +37,37 @@ export interface Options {
 	proxy?: boolean;
 }
 
+
+function valueOf<T>(this: Value<T>) {
+	const value = this();
+	if (value === undefined) { return value; }
+	if (value === null) { return value; }
+	return (value as any).valueOf();
+}
+function toString<T>(this: Value<T>, ...p: any) {
+	const value = this();
+	if (value === undefined) { return String(value); }
+	if (value === null) { return String(value); }
+	if (typeof (value as any).toString === 'function') {
+		return (value as any).toString(...p);
+	}
+	return String(value);
+}
+function toPrimitive<T>(this: Value<T>, hint?: 'string' | 'number' | 'default') {
+	const value = this();
+	if (value === undefined) { return String(value); }
+	if (value === null) { return String(value); }
+	if (typeof (value as any)[Symbol.toPrimitive] === 'function') {
+		return (value as any)[Symbol.toPrimitive](hint);
+	}
+	if (hint === 'string') {
+		return String(value);
+	}
+	if (hint === 'number') {
+		return Number(value);
+	}
+	return value;
+}
 
 function createValue<T, V extends Value<T> = Value<T>>(
 	recover: () => T,
@@ -66,6 +99,22 @@ function createValue<T, V extends Value<T> = Value<T>>(
 	Reflect.defineProperty(value, 'value', {
 		get,
 		set,
+		enumerable: true,
+		configurable: true,
+	});
+	Reflect.defineProperty(value, 'valueOf', {
+		value: valueOf,
+		enumerable: true,
+		configurable: true,
+	});
+	Reflect.defineProperty(value, 'toString', {
+		value: toString,
+		enumerable: true,
+		configurable: true,
+	});
+
+	Reflect.defineProperty(value, Symbol.toPrimitive, {
+		value: toPrimitive,
 		enumerable: true,
 		configurable: true,
 	});
