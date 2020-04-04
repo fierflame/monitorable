@@ -1,4 +1,4 @@
-import { markChange, markRead } from './state';
+import { markChange, markRead } from './mark';
 
 /**
  * 判断对象是否可被代理

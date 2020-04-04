@@ -1,5 +1,5 @@
 import { safeify } from './utils';
-import { markRead, markChange } from './state';
+import { markRead, markChange } from './mark';
 import { recover, encase } from './encase';
 import { createExecutable } from './executable';
 

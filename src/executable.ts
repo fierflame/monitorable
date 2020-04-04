@@ -1,14 +1,12 @@
 import { safeify } from './utils';
-import { observe, watchProp, ReadMap } from './state';
+import { observe, watchProp, ReadMap, ObserveOptions } from './mark';
 import { recover } from './encase';
 
 export interface Executable<T> {
 	(): T;
 	stop(): void;
 }
-export interface ExecutableOptions {
-	postpone?: boolean | 'priority';
-}
+export interface ExecutableOptions extends ObserveOptions {}
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
@@ -33,26 +31,30 @@ export function createExecutable<T>(
 		if (!cancel()) { return; }
 		cb(true);
 	};
+	function run(thisRead: ReadMap) {
+		if (!thisRead.size) {
+			return cb(false);
+		}
+		const list: [
+			object | Function,
+			string | boolean | symbol,
+		][] = [];
+		for ( let [obj, props] of thisRead) {
+			for (const [p, m] of props) {
+				if (m) { return cb(true); }
+				list.push([recover(obj), p]);
+			}
+		}
+		cancelList = list.map(
+			([obj, p]) => watchProp(recover(obj), p, trigger),
+		)
+	}
 	function exec() {
 		cancel();
 		const thisRead: ReadMap = new Map();
-		try {
-			return observe(fn, thisRead, options);
-		} catch(e) {
-			thisRead.clear();
-			throw e;
-		} finally {
-			if (thisRead.size) {
-				cancelList = [];
-				for ( let [obj, props] of thisRead) {
-					for (const p of props) {
-						cancelList.push(watchProp(recover(obj), p, trigger));
-					}
-				}
-			} else {
-				cb(false);
-			}
-		}
+		const result = observe(thisRead, fn, options);
+		run(thisRead);
+		return result;
 	}
 	exec.stop = () => {
 		if (!cancel()) { return; }

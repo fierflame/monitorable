@@ -1,8 +1,8 @@
 import { safeify, getMapValue, getIndexes } from './utils';
 
-export type ReadMap =  Map<
+export type ReadMap = Map<
 	object | Function,
-	Set<string | boolean | symbol>
+	Map<string | boolean | symbol, boolean>
 >;
 
 /** 已被读取的 */
@@ -21,7 +21,9 @@ export function markRead(
 	const indexes = getIndexes(target, prop);
 	if (!indexes) { return; }
 	[target, prop] = indexes;
-	getMapValue(read, target, () => new Set()).add(prop);
+	const propMap = getMapValue(read, target, () => new Map())
+	if (propMap.has(prop)) { return; }
+	propMap.set(prop, false);
 }
 export interface ObserveOptions {
 	postpone?: boolean | 'priority';
@@ -32,8 +34,8 @@ export interface ObserveOptions {
  * @param map 用于存储被读取对象的 map
  */
 export function observe<T>(
-	fn: () => T,
 	map: ReadMap,
+	fn: () => T,
 	options?: ObserveOptions,
 ): T {
 	const oldRead = read;
@@ -61,12 +63,20 @@ function execWatch(
 	[...watch].forEach(w => w());
 }
 
-let waitList: ReadMap | undefined;
+type MarkMap = Map<
+	object | Function,
+	Set<string | boolean | symbol>
+>;
+let waitList: MarkMap | undefined;
 
-function run(list: ReadMap) {
+function run(list: MarkMap) {
 	for (const [target, set] of list.entries()) {
+		const propMap = read?.get(target);
 		for (const prop of set) {
 			execWatch(target, prop);
+			if (propMap?.has(prop)) {
+				propMap.set(prop, true);
+			}
 		}
 	}
 }

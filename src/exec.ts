@@ -1,30 +1,19 @@
 import { safeify } from './utils';
-import { observe, watchProp, ReadMap } from './state';
+import { observe, watchProp, ReadMap, ObserveOptions } from './mark';
 import { recover } from './encase';
 
 export interface ExecResult<T> {
 	result: T;
 	stop(): void;
 }
-export interface ExecOptions {
+export interface ExecOptions extends ObserveOptions {
 	resultOnly?: boolean;
-	postpone?: boolean | 'priority';
 }
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-export function exec<T>(
-	fn: () => T,
-	cb: (changed: boolean) => void,
-	resultOnly?: false,
-): ExecResult<T>;
-export function exec<T>(
-	fn: () => T,
-	cb: (changed: boolean) => void,
-	resultOnly: true,
-): T;
 export function exec<T>(
 	fn: () => T,
 	cb: (changed: boolean) => void,
@@ -38,18 +27,16 @@ export function exec<T>(
 export function exec<T>(
 	fn: () => T,
 	cb: (changed: boolean) => void,
-	options?: boolean | ExecOptions,
+	options?: ExecOptions,
 ): ExecResult<T> | T;
 export function exec<T>(
 	fn: () => T,
 	cb: (changed: boolean) => void,
-	options?: boolean | ExecOptions,
+	options?: ExecOptions,
 ): ExecResult<T> | T {
 	cb = safeify(cb);
 	let cancelList: (() => void)[] | undefined;
-	const resultOnly = options === true
-		|| typeof options === 'object' && options?.resultOnly;
-	const postpone = typeof options === 'object' && options?.postpone;
+	const postpone = options?.postpone;
 	/** 取消监听 */
 	function cancel() {
 		if (!cancelList) { return false; }
@@ -62,20 +49,28 @@ export function exec<T>(
 		if (!cancel()) { return; }
 		cb(true);
 	};
-	const thisRead: ReadMap = new Map();
-	const result = observe(fn, thisRead, { postpone });
-	if (!thisRead.size) {
-		cb(false);
-		if (resultOnly) { return result; }
-		return { result, stop() {} };
-	}
-	cancelList = [];
-	for ( let [obj, props] of thisRead) {
-		for (const p of props) {
-			cancelList.push(watchProp(recover(obj), p, trigger));
+	function run(thisRead: ReadMap) {
+		if (!thisRead.size) {
+			return cb(false);
 		}
+		const list: [
+			object | Function,
+			string | boolean | symbol,
+		][] = [];
+		for ( let [obj, props] of thisRead) {
+			for (const [p, m] of props) {
+				if (m) { return cb(true); }
+				list.push([recover(obj), p]);
+			}
+		}
+		cancelList = list.map(
+			([obj, p]) => watchProp(recover(obj), p, trigger),
+		)
 	}
-	if (resultOnly) { return result; }
+	const thisRead: ReadMap = new Map();
+	const result = observe(thisRead, fn, { postpone });
+	run(thisRead);
+	if (options?.resultOnly) { return result; }
 	return {
 		result,
 		stop() {
