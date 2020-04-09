@@ -60,7 +60,7 @@ export function exec<T>(
 		for ( let [obj, props] of thisRead) {
 			for (const [p, m] of props) {
 				if (m) { return cb(true); }
-				list.push([recover(obj), p]);
+				list.push([obj, p]);
 			}
 		}
 		cancelList = list.map(
