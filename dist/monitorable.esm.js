@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.5
+ * monitorable v0.1.0-alpha.6
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -96,7 +96,13 @@ function markRead(target, prop) {
   }
 
   [target, prop] = indexes;
-  getMapValue(read, target, () => new Set()).add(prop);
+  const propMap = getMapValue(read, target, () => new Map());
+
+  if (propMap.has(prop)) {
+    return;
+  }
+
+  propMap.set(prop, false);
 }
 
 /**
@@ -104,7 +110,7 @@ function markRead(target, prop) {
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
  */
-function observe(fn, map, options) {
+function observe(map, fn, options) {
   const oldRead = read;
   read = map;
 
@@ -136,8 +142,16 @@ let waitList;
 
 function run(list) {
   for (const [target, set] of list.entries()) {
+    var _read;
+
+    const propMap = (_read = read) === null || _read === void 0 ? void 0 : _read.get(target);
+
     for (const prop of set) {
       execWatch(target, prop);
+
+      if (propMap === null || propMap === void 0 ? void 0 : propMap.has(prop)) {
+        propMap.set(prop, true);
+      }
     }
   }
 }
@@ -449,11 +463,10 @@ function equal(a, b) {
   return recover(a) === recover(b);
 }
 
-function exec(fn, cb, options) {
+function exec(cb, fn, options) {
   cb = safeify(cb);
   let cancelList;
-  const resultOnly = options === true || typeof options === 'object' && (options === null || options === void 0 ? void 0 : options.resultOnly);
-  const postpone = typeof options === 'object' && (options === null || options === void 0 ? void 0 : options.postpone);
+  const postpone = options === null || options === void 0 ? void 0 : options.postpone;
   /** 取消监听 */
 
   function cancel() {
@@ -474,35 +487,34 @@ function exec(fn, cb, options) {
 
     cb(true);
   }
+
+  function run(thisRead) {
+    if (!thisRead.size) {
+      return cb(false);
+    }
+
+    const list = [];
+
+    for (let [obj, props] of thisRead) {
+      for (const [p, m] of props) {
+        if (m) {
+          return cb(true);
+        }
+
+        list.push([obj, p]);
+      }
+    }
+
+    cancelList = list.map(([obj, p]) => watchProp(recover(obj), p, trigger));
+  }
+
   const thisRead = new Map();
-  const result = observe(fn, thisRead, {
+  const result = observe(thisRead, fn, {
     postpone
   });
+  run(thisRead);
 
-  if (!thisRead.size) {
-    cb(false);
-
-    if (resultOnly) {
-      return result;
-    }
-
-    return {
-      result,
-
-      stop() {}
-
-    };
-  }
-
-  cancelList = [];
-
-  for (let [obj, props] of thisRead) {
-    for (const p of props) {
-      cancelList.push(watchProp(recover(obj), p, trigger));
-    }
-  }
-
-  if (resultOnly) {
+  if (options === null || options === void 0 ? void 0 : options.resultOnly) {
     return result;
   }
 
@@ -525,7 +537,7 @@ function exec(fn, cb, options) {
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-function createExecutable(fn, cb, options) {
+function createExecutable(cb, fn, options) {
   cb = safeify(cb);
   let cancelList;
   /** 取消监听 */
@@ -549,28 +561,32 @@ function createExecutable(fn, cb, options) {
     cb(true);
   }
 
+  function run(thisRead) {
+    if (!thisRead.size) {
+      return cb(false);
+    }
+
+    const list = [];
+
+    for (let [obj, props] of thisRead) {
+      for (const [p, m] of props) {
+        if (m) {
+          return cb(true);
+        }
+
+        list.push([obj, p]);
+      }
+    }
+
+    cancelList = list.map(([obj, p]) => watchProp(recover(obj), p, trigger));
+  }
+
   function exec() {
     cancel();
     const thisRead = new Map();
-
-    try {
-      return observe(fn, thisRead, options);
-    } catch (e) {
-      thisRead.clear();
-      throw e;
-    } finally {
-      if (thisRead.size) {
-        cancelList = [];
-
-        for (let [obj, props] of thisRead) {
-          for (const p of props) {
-            cancelList.push(watchProp(recover(obj), p, trigger));
-          }
-        }
-      } else {
-        cb(false);
-      }
-    }
+    const result = observe(thisRead, fn, options);
+    run(thisRead);
+    return result;
   }
 
   exec.stop = () => {
@@ -591,6 +607,64 @@ function isValue(x) {
   return values.has(x);
 }
 /** 触发监听 */
+
+function valueOf() {
+  const value = this();
+
+  if (value === undefined) {
+    return value;
+  }
+
+  if (value === null) {
+    return value;
+  }
+
+  return value.valueOf();
+}
+
+function toString(...p) {
+  const value = this();
+
+  if (value === undefined) {
+    return String(value);
+  }
+
+  if (value === null) {
+    return String(value);
+  }
+
+  if (typeof value.toString === 'function') {
+    return value.toString(...p);
+  }
+
+  return String(value);
+}
+
+function toPrimitive(hint) {
+  const value = this();
+
+  if (value === undefined) {
+    return String(value);
+  }
+
+  if (value === null) {
+    return String(value);
+  }
+
+  if (typeof value[Symbol.toPrimitive] === 'function') {
+    return value[Symbol.toPrimitive](hint);
+  }
+
+  if (hint === 'string') {
+    return String(value);
+  }
+
+  if (hint === 'number') {
+    return Number(value);
+  }
+
+  return value;
+}
 
 function createValue(recover, setValue, stop = () => {}, change = () => {}) {
   function set(v, marked = false) {
@@ -626,6 +700,21 @@ function createValue(recover, setValue, stop = () => {}, change = () => {}) {
   Reflect.defineProperty(value, 'value', {
     get,
     set,
+    enumerable: true,
+    configurable: true
+  });
+  Reflect.defineProperty(value, 'valueOf', {
+    value: valueOf,
+    enumerable: true,
+    configurable: true
+  });
+  Reflect.defineProperty(value, 'toString', {
+    value: toString,
+    enumerable: true,
+    configurable: true
+  });
+  Reflect.defineProperty(value, Symbol.toPrimitive, {
+    value: toPrimitive,
     enumerable: true,
     configurable: true
   });
@@ -766,13 +855,13 @@ function computed(getter, setter, options) {
   let stopped = false;
   let computed = false;
   let trigger;
-  const executable = createExecutable(getter, changed => {
+  const executable = createExecutable(changed => {
     computed = !changed;
 
     if (changed && trigger) {
       trigger();
     }
-  }, {
+  }, getter, {
     postpone
   });
 

@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.5
+ * monitorable v0.1.0-alpha.6
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -21,7 +21,7 @@ declare function getIndexes(target: any, prop: string | number | symbol | boolea
 declare function getMapValue<K, V>(map: Map<K, V>, key: K, def: () => V): V;
 declare function getMapValue<K extends object, V>(map: WeakMap<K, V>, key: K, def: () => V): V;
 
-declare type ReadMap = Map<object | Function, Set<string | boolean | symbol>>;
+declare type ReadMap = Map<object | Function, Map<string | boolean | symbol, boolean>>;
 /**
  * 标记已读状态
  * @param obj  要标记的对象
@@ -36,7 +36,7 @@ interface ObserveOptions {
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
  */
-declare function observe<T>(fn: () => T, map: ReadMap, options?: ObserveOptions): T;
+declare function observe<T>(map: ReadMap, fn: () => T, options?: ObserveOptions): T;
 declare function postpone<T>(f: () => T, priority?: boolean): T;
 /**
  * 标记属性的修改，同时触发监听函数
@@ -66,38 +66,34 @@ interface ExecResult<T> {
     result: T;
     stop(): void;
 }
-interface ExecOptions {
+interface ExecOptions extends ObserveOptions {
     resultOnly?: boolean;
-    postpone?: boolean | 'priority';
 }
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, resultOnly?: false): ExecResult<T>;
-declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, resultOnly: true): T;
-declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, options?: ExecOptions & {
+declare function exec<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecOptions & {
     resultOnly?: false;
 }): ExecResult<T>;
-declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, options: ExecOptions & {
+declare function exec<T>(cb: (changed: boolean) => void, fn: () => T, options: ExecOptions & {
     resultOnly: true;
 }): T;
-declare function exec<T>(fn: () => T, cb: (changed: boolean) => void, options?: boolean | ExecOptions): ExecResult<T> | T;
+declare function exec<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecOptions): ExecResult<T> | T;
 
 interface Executable<T> {
     (): T;
     stop(): void;
 }
-interface ExecutableOptions {
-    postpone?: boolean | 'priority';
+interface ExecutableOptions extends ObserveOptions {
 }
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-declare function createExecutable<T>(fn: () => T, cb: (changed: boolean) => void, options?: ExecutableOptions): Executable<T>;
+declare function createExecutable<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecutableOptions): Executable<T>;
 
 /** 取消监听的方法 */
 interface CancelWatch {
@@ -110,6 +106,12 @@ interface Value<T> {
     value: T;
     watch(cb: WatchCallback<T, this>): CancelWatch;
     stop(): void;
+    toString(...p: T extends {
+        toString(...p: infer P): string;
+    } ? P : any): string;
+    valueOf(): T extends {
+        valueOf(): infer R;
+    } ? R : T;
 }
 /** 监听函数 */
 interface WatchCallback<T, V extends Value<T> = Value<T>> {
