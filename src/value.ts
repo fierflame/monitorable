@@ -244,12 +244,12 @@ export function computed<T>(
 	let stopped = false;
 	let computed = false;
 	let trigger: Trigger | undefined;
-	const executable = createExecutable(getter, changed => {
+	const executable = createExecutable(changed => {
 		computed = !changed;
 		if (changed  && trigger) {
 			trigger();
 		}
-	}, { postpone });
+	}, getter, { postpone });
 	function run() {
 		computed = true;
 		try {

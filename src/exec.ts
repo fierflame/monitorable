@@ -15,23 +15,23 @@ export interface ExecOptions extends ObserveOptions {
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
 export function exec<T>(
-	fn: () => T,
 	cb: (changed: boolean) => void,
+	fn: () => T,
 	options?: ExecOptions & {resultOnly?: false},
 ): ExecResult<T>;
 export function exec<T>(
-	fn: () => T,
 	cb: (changed: boolean) => void,
+	fn: () => T,
 	options: ExecOptions & {resultOnly: true},
 ): T;
 export function exec<T>(
-	fn: () => T,
 	cb: (changed: boolean) => void,
+	fn: () => T,
 	options?: ExecOptions,
 ): ExecResult<T> | T;
 export function exec<T>(
-	fn: () => T,
 	cb: (changed: boolean) => void,
+	fn: () => T,
 	options?: ExecOptions,
 ): ExecResult<T> | T {
 	cb = safeify(cb);
