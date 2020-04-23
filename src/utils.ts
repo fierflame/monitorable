@@ -1,24 +1,16 @@
 
 let printErrorLog: undefined | ((info: any) => void);
-/** 设置或移除错误打印函数 */
-export function printError(fn?: (info: any) => void): void;
 /** 打印错误 */
-export function printError(info: any, print: true): void;
-/** 打印错误 */
-export function printError(info: any): void;
-export function printError(
-	info?: string | Error | ((info: any) => void),
-	print = false
-) {
-	if (!print && (typeof info === 'function' || info === undefined)) {
-		printErrorLog = info;
-		return;
-	}
+export function printError(info: any) {
 	if (typeof printErrorLog === 'function') {
 		printErrorLog(info);
 		return;
 	}
 	console.error(info);
+}
+
+export function setPrintError(p?: (info: any) => void) {
+	printErrorLog = typeof p === 'function' ? p : undefined;
 }
 
 /**
@@ -37,7 +29,7 @@ export function safeify<T extends any[]>(
 		try {
 			fn(...p);
 		} catch(e) {
-			printError(e, true);
+			printError(e);
 		}
 	};
 }

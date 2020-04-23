@@ -17,6 +17,7 @@ export interface Value<T> {
 	toString(...p: T extends {toString(...p: infer P): string} ? P : any): string;
 	valueOf(): T extends {valueOf(): infer R} ? R : T;
 }
+export type DeValue<T> = T extends Value<infer V> ? V : T;
 /** 监听函数 */
 export interface WatchCallback<T, V extends Value<T> = Value<T>> {
 	(v: V, stopped: boolean): void;
