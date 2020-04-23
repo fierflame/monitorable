@@ -21,7 +21,7 @@ export function markRead(
 	const indexes = getIndexes(target, prop);
 	if (!indexes) { return; }
 	[target, prop] = indexes;
-	const propMap = getMapValue(read, target, () => new Map())
+	const propMap = getMapValue(read, target, () => new Map());
 	if (propMap.has(prop)) { return; }
 	propMap.set(prop, false);
 }
@@ -33,7 +33,7 @@ export interface ObserveOptions {
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
  */
-export function observe<T>(
+export function observeRun<T>(
 	map: ReadMap,
 	fn: () => T,
 	options?: ObserveOptions,
@@ -46,6 +46,35 @@ export function observe<T>(
 	} finally {
 		read = oldRead;
 	}
+}
+export function observe<T>(
+	map: ReadMap,
+	fn: () => T,
+	priority?: ObserveOptions,
+): T;
+export function observe<T>(
+	map: ReadMap,
+	priority: ObserveOptions,
+	f: () => T,
+): T;
+export function observe<T>(
+	map: ReadMap,
+	fn: (() => T) | ObserveOptions | undefined,
+	options?: (() => T) | ObserveOptions | undefined
+): T;
+export function observe<T>(
+	map: ReadMap,
+	fn: (() => T) | ObserveOptions | undefined,
+	options?: (() => T) | ObserveOptions | undefined
+): T {
+
+	if (typeof fn === 'function') {
+		return observeRun(map, fn, options as ObserveOptions | undefined);
+	}
+	if (typeof options !== 'function') {
+		throw new Error('fn needs to be a function');
+	}
+	return observeRun(map, options, fn);
 }
 
 
@@ -80,7 +109,9 @@ function run(list: MarkMap) {
 		}
 	}
 }
-export function postpone<T>(f: () => T, priority?: boolean): T {
+
+
+function postponeRun<T>(f: () => T, priority?: boolean): T {
 	const list = !priority && waitList || new Map();
 	const old = waitList;
 	waitList = list;
@@ -91,6 +122,25 @@ export function postpone<T>(f: () => T, priority?: boolean): T {
 		if (list !== waitList) { run(list); }
 	}
 }
+export function postpone<T>(priority: boolean, f: () => T): T;
+export function postpone<T>(fn: () => T, priority?: boolean): T;
+export function postpone<T>(
+	fn: (() => T) | boolean | undefined,
+	priority?: (() => T) | boolean | undefined
+): T;
+export function postpone<T>(
+	fn: (() => T) | boolean | undefined,
+	priority?: (() => T) | boolean | undefined
+): T {
+	if (typeof fn === 'function') {
+		return postponeRun(fn, priority as boolean | undefined);
+	}
+	if (typeof priority !== 'function') {
+		throw new Error('fn needs to be a function');
+	}
+	return postponeRun(priority, fn);
+}
+
 
 function wait(
 	target: object | Function,
