@@ -1,16 +1,13 @@
 
 /*!
- * monitorable v0.1.0-alpha.6
+ * monitorable v0.1.0-alpha.7
  * (c) 2020 Fierflame
  * @license MIT
  */
 
-/** 设置或移除错误打印函数 */
-declare function printError(fn?: (info: any) => void): void;
-/** 打印错误 */
-declare function printError(info: any, print: true): void;
 /** 打印错误 */
 declare function printError(info: any): void;
+declare function setPrintError(p?: (info: any) => void): void;
 /**
  * 判断对象是否可被代理
  */
@@ -36,8 +33,13 @@ interface ObserveOptions {
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
  */
-declare function observe<T>(map: ReadMap, fn: () => T, options?: ObserveOptions): T;
-declare function postpone<T>(f: () => T, priority?: boolean): T;
+declare function observeRun<T>(map: ReadMap, fn: () => T, options?: ObserveOptions): T;
+declare function observe<T>(map: ReadMap, fn: () => T, priority?: ObserveOptions): T;
+declare function observe<T>(map: ReadMap, priority: ObserveOptions, f: () => T): T;
+declare function observe<T>(map: ReadMap, fn: (() => T) | ObserveOptions | undefined, options?: (() => T) | ObserveOptions | undefined): T;
+declare function postpone<T>(priority: boolean, f: () => T): T;
+declare function postpone<T>(fn: () => T, priority?: boolean): T;
+declare function postpone<T>(fn: (() => T) | boolean | undefined, priority?: (() => T) | boolean | undefined): T;
 /**
  * 标记属性的修改，同时触发监听函数
  * @param target 要标记的对象
@@ -74,13 +76,20 @@ interface ExecOptions extends ObserveOptions {
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-declare function exec<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecOptions & {
+declare function exec<T>(cb: (changed: boolean) => void, fn: (stop: () => void) => T, options?: ExecOptions & {
     resultOnly?: false;
 }): ExecResult<T>;
-declare function exec<T>(cb: (changed: boolean) => void, fn: () => T, options: ExecOptions & {
+declare function exec<T>(cb: (changed: boolean) => void, options: ExecOptions & {
+    resultOnly?: false;
+} | undefined, fn?: (stop: () => void) => T): ExecResult<T>;
+declare function exec<T>(cb: (changed: boolean) => void, fn: (stop: () => void) => T, options: ExecOptions & {
     resultOnly: true;
 }): T;
-declare function exec<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecOptions): ExecResult<T> | T;
+declare function exec<T>(cb: (changed: boolean) => void, options: ExecOptions & {
+    resultOnly: true;
+}, fn: (stop: () => void) => T): T;
+declare function exec<T>(cb: (changed: boolean) => void, fn: (stop: () => void) => T, options?: ExecOptions): ExecResult<T> | T;
+declare function exec<T>(cb: (changed: boolean) => void, options: ExecOptions | undefined, fn: (stop: () => void) => T): ExecResult<T> | T;
 
 interface Executable<T> {
     (): T;
@@ -94,6 +103,8 @@ interface ExecutableOptions extends ObserveOptions {
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
 declare function createExecutable<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecutableOptions): Executable<T>;
+declare function createExecutable<T>(cb: (changed: boolean) => void, options: ExecutableOptions | undefined, fn: () => T): Executable<T>;
+declare function createExecutable<T>(cb: (changed: boolean) => void, fn: (() => T) | ExecutableOptions | undefined, options?: (() => T) | ExecutableOptions): Executable<T>;
 
 /** 取消监听的方法 */
 interface CancelWatch {
@@ -113,6 +124,7 @@ interface Value<T> {
         valueOf(): infer R;
     } ? R : T;
 }
+declare type DeValue<T> = T extends Value<infer V> ? V : T;
 /** 监听函数 */
 interface WatchCallback<T, V extends Value<T> = Value<T>> {
     (v: V, stopped: boolean): void;
@@ -151,4 +163,10 @@ declare function mix<T extends object>(source: T): {
     [K in keyof T]: OffValue<T[K]>;
 };
 
-export { CancelWatch, ComputedOptions, ExecOptions, ExecResult, Executable, ExecutableOptions, ObserveOptions, Options, ReadMap, Value, WatchCallback, computed, createExecutable, encase, encashable, equal, exec, getIndexes, getMapValue, isValue, markChange, markRead, merge, mix, observe, postpone, printError, recover, safeify, value, watchProp };
+interface ValueifyProp<T> {
+    <K extends keyof T>(key: K, def?: Value<DeValue<T[K]> | undefined>, set?: (value: DeValue<T[K]>, setted: boolean) => void): Value<DeValue<T[K]> | undefined>;
+}
+declare function valueify<T>(props: T): ValueifyProp<T>;
+declare function valueify<T, K extends keyof T>(props: T, key: K, def?: Value<DeValue<T[K]> | undefined>, set?: (value: DeValue<T[K]>, setted: boolean) => void): Value<DeValue<T[K]> | undefined>;
+
+export { CancelWatch, ComputedOptions, DeValue, ExecOptions, ExecResult, Executable, ExecutableOptions, ObserveOptions, Options, ReadMap, Value, ValueifyProp, WatchCallback, computed, createExecutable, encase, encashable, equal, exec, getIndexes, getMapValue, isValue, markChange, markRead, merge, mix, observe, observeRun, postpone, printError, recover, safeify, setPrintError, value, valueify, watchProp };

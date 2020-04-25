@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.6
+ * monitorable v0.1.0-alpha.7
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -10,20 +10,18 @@
 Object.defineProperty(exports, '__esModule', { value: true });
 
 let printErrorLog;
-/** 设置或移除错误打印函数 */
+/** 打印错误 */
 
-function printError(info, print = false) {
-  if (!print && (typeof info === 'function' || info === undefined)) {
-    printErrorLog = info;
-    return;
-  }
-
+function printError(info) {
   if (typeof printErrorLog === 'function') {
     printErrorLog(info);
     return;
   }
 
   console.error(info);
+}
+function setPrintError(p) {
+  printErrorLog = typeof p === 'function' ? p : undefined;
 }
 /**
  * 判断对象是否可被代理
@@ -39,7 +37,7 @@ function safeify(fn) {
     try {
       fn(...p);
     } catch (e) {
-      printError(e, true);
+      printError(e);
     }
   };
 }
@@ -114,7 +112,7 @@ function markRead(target, prop) {
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
  */
-function observe(map, fn, options) {
+function observeRun(map, fn, options) {
   const oldRead = read;
   read = map;
 
@@ -127,6 +125,17 @@ function observe(map, fn, options) {
   } finally {
     read = oldRead;
   }
+}
+function observe(map, fn, options) {
+  if (typeof fn === 'function') {
+    return observeRun(map, fn, options);
+  }
+
+  if (typeof options !== 'function') {
+    throw new Error('fn needs to be a function');
+  }
+
+  return observeRun(map, options, fn);
 }
 const watchList = new WeakMap();
 
@@ -160,7 +169,7 @@ function run(list) {
   }
 }
 
-function postpone(f, priority) {
+function postponeRun(f, priority) {
   const list = !priority && waitList || new Map();
   const old = waitList;
   waitList = list;
@@ -174,6 +183,18 @@ function postpone(f, priority) {
       run(list);
     }
   }
+}
+
+function postpone(fn, priority) {
+  if (typeof fn === 'function') {
+    return postponeRun(fn, priority);
+  }
+
+  if (typeof priority !== 'function') {
+    throw new Error('fn needs to be a function');
+  }
+
+  return postponeRun(priority, fn);
 }
 
 function wait(target, prop) {
@@ -467,15 +488,22 @@ function equal(a, b) {
   return recover(a) === recover(b);
 }
 
-function exec(cb, fn, options) {
+function run$1(cb, fn, options) {
   cb = safeify(cb);
   let cancelList;
   const postpone = options === null || options === void 0 ? void 0 : options.postpone;
+  let end = false;
   /** 取消监听 */
 
   function cancel() {
-    if (!cancelList) {
+    if (end) {
       return false;
+    }
+
+    end = true;
+
+    if (!cancelList) {
+      return true;
     }
 
     const list = cancelList;
@@ -493,7 +521,12 @@ function exec(cb, fn, options) {
   }
 
   function run(thisRead) {
+    if (end) {
+      return false;
+    }
+
     if (!thisRead.size) {
+      end = true;
       return cb(false);
     }
 
@@ -512,8 +545,15 @@ function exec(cb, fn, options) {
     cancelList = list.map(([obj, p]) => watchProp(recover(obj), p, trigger));
   }
 
+  function stop() {
+    if (!cancel()) {
+      return;
+    }
+
+    cb(false);
+  }
   const thisRead = new Map();
-  const result = observe(thisRead, fn, {
+  const result = observe(thisRead, () => fn(stop), {
     postpone
   });
   run(thisRead);
@@ -524,16 +564,30 @@ function exec(cb, fn, options) {
 
   return {
     result,
-
-    stop() {
-      if (!cancel()) {
-        return;
-      }
-
-      cb(false);
-    }
-
+    stop
   };
+}
+/**
+ * 创建可监听执行函数
+ * @param fn 要监听执行的函数
+ * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
+ */
+
+
+function exec(cb, fn, options) {
+  if (typeof cb !== 'function') {
+    throw new Error('cb needs to be a function');
+  }
+
+  if (typeof fn === 'function') {
+    return run$1(cb, fn, options);
+  }
+
+  if (typeof options !== 'function') {
+    throw new Error('fn needs to be a function');
+  }
+
+  return run$1(cb, options, fn);
 }
 
 /**
@@ -541,7 +595,7 @@ function exec(cb, fn, options) {
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-function createExecutable(cb, fn, options) {
+function create(cb, fn, options) {
   cb = safeify(cb);
   let cancelList;
   /** 取消监听 */
@@ -602,6 +656,24 @@ function createExecutable(cb, fn, options) {
   };
 
   return exec;
+}
+/**
+ * 创建可监听执行函数
+ * @param fn 要监听执行的函数
+ * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
+ */
+
+
+function createExecutable(cb, fn, options) {
+  if (typeof fn === 'function') {
+    return create(cb, fn, options);
+  }
+
+  if (typeof options !== 'function') {
+    throw new Error('fn needs to be a function');
+  }
+
+  return create(cb, options, fn);
 }
 
 /** 取消监听的方法 */
@@ -960,6 +1032,49 @@ function mix(source) {
   return source;
 }
 
+function createValue$1(props, key, def = value(undefined), set) {
+  function setValue(value, setted) {
+    if (!set) {
+      return;
+    }
+
+    set(value, setted);
+  }
+
+  return computed(() => {
+    if (!(key in props)) {
+      return def();
+    }
+
+    const p = props[key];
+    return isValue(p) ? p() : p;
+  }, v => {
+    if (!(key in props)) {
+      def(v);
+      setValue(v, false);
+      return;
+    }
+
+    const p = props[key];
+
+    if (isValue(p)) {
+      p(v);
+      setValue(v, true);
+      return;
+    }
+
+    setValue(v, false);
+  });
+}
+
+function valueify(props, key, def, set) {
+  if (arguments.length >= 2) {
+    return createValue$1(props, key, def, set);
+  }
+
+  return (k, d, s) => createValue$1(props, k, d, s);
+}
+
 exports.computed = computed;
 exports.createExecutable = createExecutable;
 exports.encase = encase;
@@ -974,10 +1089,13 @@ exports.markRead = markRead;
 exports.merge = merge;
 exports.mix = mix;
 exports.observe = observe;
+exports.observeRun = observeRun;
 exports.postpone = postpone;
 exports.printError = printError;
 exports.recover = recover;
 exports.safeify = safeify;
+exports.setPrintError = setPrintError;
 exports.value = value;
+exports.valueify = valueify;
 exports.watchProp = watchProp;
 //# sourceMappingURL=monitorable.common.js.map

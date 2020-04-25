@@ -1,6 +1,6 @@
 {
   "name": "monitorable",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "main": "dist/monitorable.common.js",
   "module": "dist/monitorable.esm.js",
   "unpkg": "dist/monitorable.js",
