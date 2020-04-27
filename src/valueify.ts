@@ -1,6 +1,6 @@
 
 import { DeValue, Value, value, computed, isValue } from './value';
-export interface ValueifyProp<T> {
+export interface Valueify<T> {
 	<K extends keyof T>(
 		key: K,
 		def?: Value<DeValue<T[K]> | undefined>,
@@ -37,7 +37,7 @@ function createValue<T, K extends keyof T>(
 		setValue(v, false);
 	});
 }
-export function valueify<T>(props: T): ValueifyProp<T>;
+export function valueify<T>(props: T): Valueify<T>;
 export function valueify<T, K extends keyof T>(
 	props: T,
 	key: K,
@@ -49,7 +49,7 @@ export function valueify<T, K extends keyof T>(
 	key?: K,
 	def?: Value<DeValue<T[K]> | undefined>,
 	set?: (value: DeValue<T[K]>, setted: boolean) => void
-): ValueifyProp<T> | Value<DeValue<T[K]> | undefined> {
+): Valueify<T> | Value<DeValue<T[K]> | undefined> {
 	if (arguments.length >= 2) {
 		return createValue(props, key!, def, set);
 	}

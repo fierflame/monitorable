@@ -1,7 +1,7 @@
 import { safeify } from './utils';
 import { markRead, markChange } from './mark';
 import { recover, encase } from './encase';
-import { createExecutable } from './executable';
+import { monitor } from './monitor';
 
 /** 取消监听的方法 */
 export interface CancelWatch {
@@ -18,6 +18,7 @@ export interface Value<T> {
 	valueOf(): T extends {valueOf(): infer R} ? R : T;
 }
 export type DeValue<T> = T extends Value<infer V> ? V : T;
+export type EnValue<T> = Value<DeValue<T>>;
 /** 监听函数 */
 export interface WatchCallback<T, V extends Value<T> = Value<T>> {
 	(v: V, stopped: boolean): void;
@@ -245,7 +246,7 @@ export function computed<T>(
 	let stopped = false;
 	let computed = false;
 	let trigger: Trigger | undefined;
-	const executable = createExecutable(changed => {
+	const executable = monitor(changed => {
 		computed = !changed;
 		if (changed  && trigger) {
 			trigger();
