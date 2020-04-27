@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.7
+ * monitorable v0.1.0-beta.0
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -639,10 +639,10 @@ function create(cb, fn, options) {
     cancelList = list.map(([obj, p]) => watchProp(recover(obj), p, trigger));
   }
 
-  function exec() {
+  function exec(...p) {
     cancel();
     const thisRead = new Map();
-    const result = observe(thisRead, fn, options);
+    const result = observe(thisRead, () => fn(...p), options);
     run(thisRead);
     return result;
   }
@@ -664,7 +664,7 @@ function create(cb, fn, options) {
  */
 
 
-function createExecutable(cb, fn, options) {
+function monitor(cb, fn, options) {
   if (typeof fn === 'function') {
     return create(cb, fn, options);
   }
@@ -931,7 +931,7 @@ function computed(getter, setter, options) {
   let stopped = false;
   let computed = false;
   let trigger;
-  const executable = createExecutable(changed => {
+  const executable = monitor(changed => {
     computed = !changed;
 
     if (changed && trigger) {
@@ -1075,8 +1075,31 @@ function valueify(props, key, def, set) {
   return (k, d, s) => createValue$1(props, k, d, s);
 }
 
+function createValue$2(props, key) {
+  return computed(() => {
+    const p = props[key];
+    return isValue(p) ? p() : p;
+  }, v => {
+    const p = props[key];
+
+    if (isValue(p)) {
+      p(v);
+    } else {
+      props[key] = v;
+    }
+  });
+}
+
+function asValue(props, key) {
+  if (arguments.length >= 2) {
+    return createValue$2(props, key);
+  }
+
+  return k => createValue$2(props, k);
+}
+
+exports.asValue = asValue;
 exports.computed = computed;
-exports.createExecutable = createExecutable;
 exports.encase = encase;
 exports.encashable = encashable;
 exports.equal = equal;
@@ -1088,6 +1111,7 @@ exports.markChange = markChange;
 exports.markRead = markRead;
 exports.merge = merge;
 exports.mix = mix;
+exports.monitor = monitor;
 exports.observe = observe;
 exports.observeRun = observeRun;
 exports.postpone = postpone;

@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-alpha.7
+ * monitorable v0.1.0-beta.0
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -91,20 +91,20 @@ declare function exec<T>(cb: (changed: boolean) => void, options: ExecOptions & 
 declare function exec<T>(cb: (changed: boolean) => void, fn: (stop: () => void) => T, options?: ExecOptions): ExecResult<T> | T;
 declare function exec<T>(cb: (changed: boolean) => void, options: ExecOptions | undefined, fn: (stop: () => void) => T): ExecResult<T> | T;
 
-interface Executable<T> {
-    (): T;
+interface Monitored<T, P extends any[] = []> {
+    (...p: P): T;
     stop(): void;
 }
-interface ExecutableOptions extends ObserveOptions {
+interface MonitorOptions extends ObserveOptions {
 }
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
  * @param cb 当监听的值发生可能改变时触发的回调函数，单如果没有被执行的函数或抛出错误，将会在每次 fn 被执行后直接执行
  */
-declare function createExecutable<T>(cb: (changed: boolean) => void, fn: () => T, options?: ExecutableOptions): Executable<T>;
-declare function createExecutable<T>(cb: (changed: boolean) => void, options: ExecutableOptions | undefined, fn: () => T): Executable<T>;
-declare function createExecutable<T>(cb: (changed: boolean) => void, fn: (() => T) | ExecutableOptions | undefined, options?: (() => T) | ExecutableOptions): Executable<T>;
+declare function monitor<T, P extends any[] = []>(cb: (changed: boolean) => void, fn: (...p: P) => T, options?: MonitorOptions): Monitored<T, P>;
+declare function monitor<T, P extends any[] = []>(cb: (changed: boolean) => void, options: MonitorOptions | undefined, fn: (...p: P) => T): Monitored<T, P>;
+declare function monitor<T, P extends any[] = []>(cb: (changed: boolean) => void, fn: ((...p: P) => T) | MonitorOptions | undefined, options?: ((...p: P) => T) | MonitorOptions): Monitored<T, P>;
 
 /** 取消监听的方法 */
 interface CancelWatch {
@@ -125,6 +125,7 @@ interface Value<T> {
     } ? R : T;
 }
 declare type DeValue<T> = T extends Value<infer V> ? V : T;
+declare type EnValue<T> = Value<DeValue<T>>;
 /** 监听函数 */
 interface WatchCallback<T, V extends Value<T> = Value<T>> {
     (v: V, stopped: boolean): void;
@@ -163,10 +164,16 @@ declare function mix<T extends object>(source: T): {
     [K in keyof T]: OffValue<T[K]>;
 };
 
-interface ValueifyProp<T> {
+interface Valueify<T> {
     <K extends keyof T>(key: K, def?: Value<DeValue<T[K]> | undefined>, set?: (value: DeValue<T[K]>, setted: boolean) => void): Value<DeValue<T[K]> | undefined>;
 }
-declare function valueify<T>(props: T): ValueifyProp<T>;
+declare function valueify<T>(props: T): Valueify<T>;
 declare function valueify<T, K extends keyof T>(props: T, key: K, def?: Value<DeValue<T[K]> | undefined>, set?: (value: DeValue<T[K]>, setted: boolean) => void): Value<DeValue<T[K]> | undefined>;
 
-export { CancelWatch, ComputedOptions, DeValue, ExecOptions, ExecResult, Executable, ExecutableOptions, ObserveOptions, Options, ReadMap, Value, ValueifyProp, WatchCallback, computed, createExecutable, encase, encashable, equal, exec, getIndexes, getMapValue, isValue, markChange, markRead, merge, mix, observe, observeRun, postpone, printError, recover, safeify, setPrintError, value, valueify, watchProp };
+interface AsValue<T> {
+    <K extends keyof T>(key: K): EnValue<T[K]>;
+}
+declare function asValue<T>(props: T): AsValue<T>;
+declare function asValue<T, K extends keyof T>(props: T, key: K): EnValue<T[K]>;
+
+export { AsValue, CancelWatch, ComputedOptions, DeValue, EnValue, ExecOptions, ExecResult, MonitorOptions, Monitored, ObserveOptions, Options, ReadMap, Value, Valueify, WatchCallback, asValue, computed, encase, encashable, equal, exec, getIndexes, getMapValue, isValue, markChange, markRead, merge, mix, monitor, observe, observeRun, postpone, printError, recover, safeify, setPrintError, value, valueify, watchProp };
