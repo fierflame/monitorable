@@ -8,6 +8,7 @@ export interface ExecResult<T> {
 }
 export interface ExecOptions extends ObserveOptions {
 	resultOnly?: boolean;
+	disdeferable?: boolean;
 }
 function run<T>(
 	cb: (changed: boolean) => void,
@@ -49,7 +50,12 @@ function run<T>(
 			}
 		}
 		cancelList = list.map(
-			([obj, p]) => watchProp(recover(obj), p, trigger),
+			([obj, p]) => watchProp(
+				recover(obj),
+				p,
+				trigger,
+				options?.disdeferable,
+			),
 		);
 	}
 	function stop() {

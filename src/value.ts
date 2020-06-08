@@ -203,6 +203,7 @@ export function value<T>(
 export interface ComputedOptions {
 	postpone?: boolean | 'priority';
 	proxy?: boolean;
+	deferable?: boolean;
 }
 /**
  * 创建计算值
@@ -241,6 +242,7 @@ export function computed<T>(
 	const setValue = setter;
 	const proxy = options === true || options && options.proxy;
 	const postpone = typeof options === 'object' && options?.postpone;
+	const deferable = typeof options === 'object' && options?.deferable;
 	let source: T;
 	let proxyValue: T;
 	let stopped = false;
@@ -251,7 +253,7 @@ export function computed<T>(
 		if (changed  && trigger) {
 			trigger();
 		}
-	}, getter, { postpone });
+	}, getter, { postpone, disdeferable: !deferable });
 	function run() {
 		computed = true;
 		try {

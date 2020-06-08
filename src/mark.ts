@@ -33,7 +33,7 @@ export interface ObserveOptions {
  * @param fn 要执行的含糊
  * @param map 用于存储被读取对象的 map
  */
-export function observeRun<T>(
+function observeRun<T>(
 	map: ReadMap,
 	fn: () => T,
 	options?: ObserveOptions,
@@ -80,16 +80,21 @@ export function observe<T>(
 
 const watchList = new WeakMap<
 	object | Function,
-	Map<string | boolean | symbol, Set<() => void>>
+	Map<string | boolean | symbol, Set<[() => void, boolean]>>
 >();
 
 function execWatch(
 	target: object | Function,
 	prop: string | boolean | symbol,
+	filter?: (isNonDeforred: boolean) => boolean,
 ) {
 	const watch = watchList.get(target)?.get(prop);
 	if (!watch) { return; }
-	[...watch].forEach(w => w());
+	let list = [...watch];
+	if (filter) {
+		list = list.filter(([, t]) => filter(t));
+	}
+	list.forEach(([w]) => w());
 }
 
 type MarkMap = Map<
@@ -98,11 +103,11 @@ type MarkMap = Map<
 >;
 let waitList: MarkMap | undefined;
 
-function run(list: MarkMap) {
+function runDeferred(list: MarkMap) {
 	for (const [target, set] of list.entries()) {
 		const propMap = read?.get(target);
 		for (const prop of set) {
-			execWatch(target, prop);
+			execWatch(target, prop, t => !t);
 			if (propMap?.has(prop)) {
 				propMap.set(prop, true);
 			}
@@ -119,7 +124,7 @@ function postponeRun<T>(f: () => T, priority?: boolean): T {
 		return f();
 	} finally {
 		waitList = old;
-		if (list !== waitList) { run(list); }
+		if (list !== waitList) { runDeferred(list); }
 	}
 }
 export function postpone<T>(priority: boolean, f: () => T): T;
@@ -164,7 +169,10 @@ export function markChange(
 	const indexes = getIndexes(target, prop);
 	if (!indexes) { return; }
 	[target, prop] = indexes;
-	if (wait(target, prop)) { return; }
+	if (wait(target, prop)) {
+		execWatch(target, prop, Boolean);
+		return;
+	}
 	execWatch(target, prop);
 }
 
@@ -178,6 +186,7 @@ export function watchProp(
 	target: object | Function,
 	prop: string | number | boolean | symbol,
 	cb: () => void,
+	disdeferable: boolean = false,
 ): () => void {
 	if (typeof cb !== 'function') { return  () => {}; }
 	const indexes = getIndexes(target, prop);
@@ -191,15 +200,15 @@ export function watchProp(
 		watchList.set(target, map);
 	}
 	const list = getMapValue(map, key, () => new Set());
-	cb = safeify(cb);
-	list.add(cb);
+	const item: [() => void, boolean] = [safeify(cb), disdeferable];
+	list.add(item);
 	let removed = false;
 	return () => {
 		if (removed) { return; }
 		removed = true;
 
 		// 从当前列表中移除
-		list.delete(cb);
+		list.delete(item);
 
 		// 从属性关联中删除
 		if (list.size) { return; }

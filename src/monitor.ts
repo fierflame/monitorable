@@ -6,7 +6,9 @@ export interface Monitored<T, P extends any[] = []> {
 	(...p: P): T;
 	stop(): void;
 }
-export interface MonitorOptions extends ObserveOptions {}
+export interface MonitorOptions extends ObserveOptions {
+	disdeferable?: boolean;
+}
 /**
  * 创建可监听执行函数
  * @param fn 要监听执行的函数
@@ -46,7 +48,12 @@ function create<T, P extends any[] = []>(
 			}
 		}
 		cancelList = list.map(
-			([obj, p]) => watchProp(recover(obj), p, trigger),
+			([obj, p]) => watchProp(
+				recover(obj),
+				p,
+				trigger,
+				options?.disdeferable,
+			),
 		);
 	}
 	function exec(...p: P) {
