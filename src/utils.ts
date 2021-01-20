@@ -33,6 +33,17 @@ export function safeify<T extends any[]>(
 		}
 	};
 }
+
+/** 回调函数安全化处理 */
+export function safeCall(
+	fn: () => void
+): void {
+	try {
+		fn();
+	} catch(e) {
+		printError(e);
+	}
+}
 export function getIndexes(
 	target: any,
 	prop: string | number | symbol | boolean,
