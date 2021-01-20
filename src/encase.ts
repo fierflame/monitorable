@@ -23,11 +23,15 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 				return Reflect.set(target, prop, value, receiver);
 			}
 			const has = Reflect.has(target, prop);
+			const old = Reflect.get(target, prop, receiver);
 			const modified =
 				Reflect.set(target, prop, value, encase(receiver));
 			if (!modified) { return modified; }
 			if (has !== Reflect.has(target, prop)) {
-				markChange(target, true);
+				markChange(receiver, true);
+			}
+			if (old !== Reflect.get(target, prop, receiver)) {
+				markChange(receiver, prop);
 			}
 			return modified;
 		},
@@ -41,7 +45,7 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 			if (nest === false) {
 				return Reflect.get(target, prop, receiver);
 			}
-			markRead(target, prop);
+			markRead(receiver, prop);
 			const value = Reflect.get(target, prop, encase(receiver));
 			if (nestLayer > 0) { return encase(value, nestLayer - 1); }
 			return value;
@@ -54,6 +58,7 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 			const modified = Reflect.setPrototypeOf(target, proto);
 			if (modified && oldProto !== proto) {
 				markChange(target, false);
+				markChange(proxy, false);
 			}
 			return modified;
 		},
@@ -62,6 +67,7 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 				return Reflect.getPrototypeOf(target);
 			}
 			markRead(target, false);
+			markRead(proxy, false);
 			const value: any = Reflect.getPrototypeOf(target);
 			if (nestLayer > 0) {
 				return encase(value, nestLayer - 1);
@@ -85,6 +91,7 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 			const modified = Reflect.defineProperty(target, prop, attr);
 			if (changed && modified) {
 				markChange(target, prop);
+				markChange(proxy, prop);
 			}
 			return modified;
 		},
@@ -93,6 +100,7 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 				return Reflect.getOwnPropertyDescriptor(target, prop);
 			}
 			markRead(target, prop);
+			markRead(proxy, prop);
 			return Reflect.getOwnPropertyDescriptor(target, prop);
 		},
 		deleteProperty(target, prop) {
@@ -104,17 +112,21 @@ export function encase<T>(value: T, nest: number | boolean = 0): T {
 			if (has && !Reflect.has(target, prop)) {
 				markChange(target, prop);
 				markChange(target, true);
+				markChange(proxy, prop);
+				markChange(proxy, true);
 			}
 			return deleted;
 		},
 		ownKeys(target) {
 			if (nest === false) { return Reflect.ownKeys(target); }
 			markRead(target, true);
+			markRead(proxy, true);
 			return Reflect.ownKeys(target);
 		},
 		has(target, prop) {
 			if (nest === false) { return Reflect.has(target, prop); }
 			markRead(target, true);
+			markRead(proxy, true);
 			return Reflect.has(target, prop);
 		},
 	});
