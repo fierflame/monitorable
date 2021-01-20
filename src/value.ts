@@ -1,27 +1,24 @@
-import { safeify } from './utils';
-import { markRead, markChange } from './mark';
-import { recover, encase } from './encase';
+import { safeCall } from './utils';
+import { markRead, markChange, watchProp } from './mark';
 import { monitor } from './monitor';
 
 /** 取消监听的方法 */
 export interface CancelWatch {
 	(): void;
 }
+/** 监听函数 */
+export interface WatchCallback<T, V extends Value<T> = Value<T>> {
+	(v: V, stopped: boolean): void;
+}
 /** 可监听值 */
 export interface Value<T> {
 	(): T;
 	(v: T, mark?: boolean): T;
 	value: T;
-	watch(cb: WatchCallback<T, this>): CancelWatch;
+	watch(cb: WatchCallback<T, this>, disdeferable?: boolean): CancelWatch;
 	stop(): void;
 	toString(...p: T extends {toString(...p: infer P): string} ? P : any): string;
 	valueOf(): T extends {valueOf(): infer R} ? R : T;
-}
-export type DeValue<T> = T extends Value<infer V> ? V : T;
-export type EnValue<T> = Value<DeValue<T>>;
-/** 监听函数 */
-export interface WatchCallback<T, V extends Value<T> = Value<T>> {
-	(v: V, stopped: boolean): void;
 }
 const values = new WeakSet<Value<any>>();
 export function isValue(x: any): x is Value<any> {
@@ -34,9 +31,6 @@ interface Trigger {
 	has(): boolean;
 	/** 停止监听 */
 	stop(): void;
-}
-export interface Options {
-	proxy?: boolean;
 }
 
 
@@ -121,42 +115,49 @@ function createValue<T, V extends Value<T> = Value<T>>(
 		configurable: true,
 	});
 
-	function watch(cb: WatchCallback<T, V>): () => void {
-		if (!callbacks) { return () => {}; }
-		cb = safeify(cb);
-		callbacks.push(cb);
-		change();
+	let stopList: Set<() => void> | undefined = new Set();
+	function watch(
+		cb: WatchCallback<T, V>,
+		disdeferable?: boolean,
+	): () => void {
+		if (!stopList) { return () => {}; }
+		const cancel = watchProp(
+			value,
+			'value',
+			() => cb(value, false),
+			disdeferable,
+		);
 		let cancelled = false;
+		const stop = () => {
+			if (cancelled) { return; }
+			cancelled = true;
+			if (stopList) { stopList.delete(stop); }
+			cancel();
+			safeCall(() => cb(value, true));
+		};
+		stopList.add(stop);
+		change();
 		return () => {
 			if (cancelled) { return; }
 			cancelled = true;
-			if (!callbacks) { return; }
-			const index = callbacks.findIndex(a => a === cb);
-			if (index < 0) { return; }
-			callbacks.splice(index, 1);
+			if (stopList) { stopList.delete(stop); }
+			cancel();
 			change();
 		};
 	}
-	let callbacks: WatchCallback<T, V>[] | undefined = [];
 	Reflect.defineProperty(value, 'watch', {
 		get() { return watch; },
 		set() {},
 		configurable: true,
 	});
-	const trigger = (() => {
-		if (!callbacks) { return; }
-		markChange(value, 'value');
-		for (const cb of [...callbacks]) {
-			cb(value, false);
-		}
-	}) as Trigger;
-	trigger.has = () => Boolean(callbacks?.length);
+	const trigger = (() => markChange(value, 'value')) as Trigger;
+	trigger.has = () => Boolean(stopList?.size);
 	trigger.stop = () => {
-		if (!callbacks) { return; }
-		const list = callbacks;
-		callbacks = undefined;
-		for (const cb of [...list]) {
-			cb(value, true);
+		if (!stopList) { return; }
+		const list = stopList;
+		stopList = undefined;
+		for (const stop of [...list]) {
+			stop();
 		}
 	};
 	values.add(value);
@@ -175,24 +176,15 @@ function createValue<T, V extends Value<T> = Value<T>>(
  * @param value 初始值
  * @param options 选项
  */
-export function value<T>(
-	value: T,
-	options?: Options | boolean,
-): Value<T>;
-export function value<T>(
-	def: T,
-	options?: Options | boolean,
-): Value<T> {
-	const proxy = options === true || options && options.proxy;
+export function value<T>(def: T): Value<T> {
 	let source: T;
 	let proxyValue: T;
 	const { value } = createValue<T>(
 		() => proxyValue,
 		(v, mark) => {
-			if (proxy) { v = recover(v); }
 			if (v === source) { return; }
 			source = v;
-			proxyValue = proxy ? encase(source) : source;
+			proxyValue = source;
 			mark();
 		},
 	);
@@ -202,7 +194,6 @@ export function value<T>(
 
 export interface ComputedOptions {
 	postpone?: boolean | 'priority';
-	proxy?: boolean;
 	deferable?: boolean;
 }
 /**
@@ -212,7 +203,7 @@ export interface ComputedOptions {
  */
 export function computed<T>(
 	getter: () => T,
-	options?: ComputedOptions | boolean,
+	options?: ComputedOptions,
 ): Value<T>;
 /**
  * 创建可赋值计算值
@@ -223,26 +214,25 @@ export function computed<T>(
 export function computed<T>(
 	getter: () => T,
 	setter: (value: T) => void,
-	options?: ComputedOptions | boolean,
+	options?: ComputedOptions,
 ): Value<T>;
 export function computed<T>(
 	getter: () => T,
-	setter?: ((value: T) => void) | ComputedOptions | boolean,
-	options?: ComputedOptions | boolean,
+	setter?: ((value: T) => void) | ComputedOptions,
+	options?: ComputedOptions,
 ): Value<T>;
 export function computed<T>(
 	getter: () => T,
-	setter?: ((value: T) => void) | ComputedOptions | boolean,
-	options?: ComputedOptions | boolean,
+	setter?: ((value: T) => void) | ComputedOptions,
+	options?: ComputedOptions,
 ): Value<T> {
 	if (typeof setter !== 'function') {
 		options = setter;
 		setter = undefined;
 	}
 	const setValue = setter;
-	const proxy = options === true || options && options.proxy;
-	const postpone = typeof options === 'object' && options?.postpone;
-	const deferable = typeof options === 'object' && options?.deferable;
+	const postpone = options?.postpone;
+	const deferable = options?.deferable;
 	let source: T;
 	let proxyValue: T;
 	let stopped = false;
@@ -258,8 +248,7 @@ export function computed<T>(
 		computed = true;
 		try {
 			source = executable();
-			if (proxy) { source = recover(source); }
-			proxyValue = proxy ? encase(source) : source;
+			proxyValue = source;
 			return proxyValue;
 		} catch(e) {
 			if (!stopped) {
@@ -271,7 +260,7 @@ export function computed<T>(
 	let value: Value<T>;
 	({value, trigger} = createValue<T, Value<T>>(
 		() => computed || stopped ? proxyValue : run(),
-		setValue && (v => setValue(proxy ? recover(v) : v)),
+		setValue && (v => setValue(v)),
 		() => {
 			if (stopped) { return; }
 			stopped = true;
@@ -281,45 +270,4 @@ export function computed<T>(
 	));
 	return value;
 
-}
-
-export function merge<T, V extends Value<T> = Value<T>>(
-	cb: WatchCallback<T, V>
-): WatchCallback<T, V> {
-	let oldValue: any;
-	let ran = false;
-	return (v, stopped) => {
-		if (stopped) { return cb(v, stopped); }
-		const newValue = recover(v());
-		if (newValue === oldValue && ran) { return; }
-		ran = true;
-		oldValue = newValue;
-		cb(v, stopped);
-	};
-}
-
-type OffValue<V> = V extends Value<infer T> ? T : V;
-
-export function mix<T extends object>(
-	source: T
-): { [K in keyof T]: OffValue<T[K]>; } {
-	for (const k of Reflect.ownKeys(source)) {
-		const descriptor = Reflect.getOwnPropertyDescriptor(source, k);
-		if (!descriptor) { continue; }
-		if (
-			!('value' in descriptor)
-			|| 'get' in descriptor
-			|| 'set' in descriptor
-		) { continue; }
-		const value = descriptor.value;
-		if (!isValue(value)) { continue; }
-		descriptor.get = () => value.value;
-		if (descriptor.writable) {
-			descriptor.set = v => (value as Value<any>).value = v;
-		}
-		delete descriptor.value;
-		delete descriptor.writable;
-		Reflect.defineProperty(source, k, descriptor);
-	}
-	return source as any;
 }
