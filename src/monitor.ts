@@ -1,6 +1,5 @@
 import { safeify } from './utils';
 import { observe, watchProp, ReadMap, ObserveOptions } from './mark';
-import { recover } from './encase';
 
 export interface Monitored<T, P extends any[] = []> {
 	(...p: P): T;
@@ -49,7 +48,7 @@ function create<T, P extends any[] = []>(
 		}
 		cancelList = list.map(
 			([obj, p]) => watchProp(
-				recover(obj),
+				obj,
 				p,
 				trigger,
 				options?.disdeferable,

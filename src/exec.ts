@@ -1,6 +1,5 @@
 import { safeify } from './utils';
 import { observe, watchProp, ReadMap, ObserveOptions } from './mark';
-import { recover } from './encase';
 
 export interface ExecResult<T> {
 	result: T;
@@ -51,7 +50,7 @@ function run<T>(
 		}
 		cancelList = list.map(
 			([obj, p]) => watchProp(
-				recover(obj),
+				obj,
 				p,
 				trigger,
 				options?.disdeferable,
