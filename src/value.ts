@@ -20,9 +20,9 @@ export interface Value<T> {
 	toString(...p: T extends {toString(...p: infer P): string} ? P : any): string;
 	valueOf(): T extends {valueOf(): infer R} ? R : T;
 }
-const values = new WeakSet<Value<any>>();
+const valueSignKey = '__$$__monitorable_value__$$__';
 export function isValue(x: any): x is Value<any> {
-	return values.has(x);
+	return Boolean(typeof x === 'function' && x[valueSignKey]);
 }
 /** 触发监听 */
 interface Trigger {
@@ -160,7 +160,7 @@ function createValue<T, V extends Value<T> = Value<T>>(
 			stop();
 		}
 	};
-	values.add(value);
+	Reflect.defineProperty(value, valueSignKey, { value: true, configurable: true });
 	let stopped = false;
 	value.stop = () => {
 		if (stopped) { return; }
