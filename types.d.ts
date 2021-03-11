@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-beta.1
+ * monitorable v0.1.0-beta.2
  * (c) 2020-2021 Fierflame
  * @license MIT
  */
@@ -152,7 +152,7 @@ declare function valueify<T extends object, K extends keyof T>(props: T, key: K,
 declare function valueify<T extends object, K extends keyof T>(props: T, key: K[], def?: (key: K) => Value<DeValue<T[K]> | undefined>, set?: (value: DeValue<T[K]>, setted: boolean, key: K) => void): {
     [k in K]: Value<DeValue<T[k]> | undefined>;
 };
-declare function mixValue<T extends object, K extends keyof T>(source: T, props?: K[] | { [k in K]?: Value<DeValue<T[k]> | undefined> | undefined; }, set?: (value: DeValue<T[K]>, setted: boolean, key?: K) => void): {
+declare function mixValue<T extends object, K extends keyof T>(source: T, props?: K[] | { [k in K]?: Value<DeValue<T[k]> | undefined> | undefined; }, set?: (value: DeValue<T[K]>, key?: K) => void): {
     [k in keyof T]: k extends K ? DeValue<T[k]> : T[k];
 };
 interface AsValue<T> {

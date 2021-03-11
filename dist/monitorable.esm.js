@@ -1,6 +1,6 @@
 
 /*!
- * monitorable v0.1.0-beta.1
+ * monitorable v0.1.0-beta.2
  * (c) 2020-2021 Fierflame
  * @license MIT
  */
@@ -488,9 +488,9 @@ function monitor(cb, fn, options) {
 
 /** 取消监听的方法 */
 
-const values = new WeakSet();
+const valueSignKey = '__$$__monitorable_value__$$__';
 function isValue(x) {
-  return values.has(x);
+  return Boolean(typeof x === 'function' && x[valueSignKey]);
 }
 /** 触发监听 */
 
@@ -678,7 +678,10 @@ function createValue(recover, setValue, stop = () => {}, change = () => {}) {
     }
   };
 
-  values.add(value);
+  Reflect.defineProperty(value, valueSignKey, {
+    value: true,
+    configurable: true
+  });
   let stopped = false;
 
   value.stop = () => {
@@ -811,8 +814,6 @@ function createValue$1(props, key, def, set) {
 
     if (p === undefined && def) {
       def(v);
-      setValue(v, false);
-      return;
     }
 
     setValue(v, false);
@@ -851,30 +852,24 @@ function valueify(props, key, def, set) {
 function mixValue(source, props = Reflect.ownKeys(source), set) {
   const p = Object.create(source);
 
-  if (Array.isArray(props)) {
-    for (const key of props) {
-      const value = createValue$1(source, key, undefined, set && ((v, s) => set(v, s, key)));
-      Reflect.defineProperty(p, key, {
-        get() {
-          return value();
-        },
-
-        set(v) {
-          value.value = v;
-        },
-
-        configurable: true,
-        enumerable: true
-      });
+  function setValue(value, key) {
+    if (!set) {
+      return;
     }
 
-    return p;
+    set(value, key);
   }
 
-  const keys = Reflect.ownKeys(props);
+  const keys = Array.isArray(props) ? props : Reflect.ownKeys(props);
+  const values = Array.isArray(props) ? source : props;
 
   for (const key of keys) {
-    const value = createValue$1(source, key, props[key], set && ((v, s) => set(v, s, key)));
+    const value = values[key];
+
+    if (!isValue(value)) {
+      continue;
+    }
+
     Reflect.defineProperty(p, key, {
       get() {
         return value();
@@ -882,6 +877,7 @@ function mixValue(source, props = Reflect.ownKeys(source), set) {
 
       set(v) {
         value.value = v;
+        setValue(v, key);
       },
 
       configurable: true,
