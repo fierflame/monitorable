@@ -98,37 +98,21 @@ export function mixValue<T extends object, K extends keyof T>(
 	props = Reflect.ownKeys(source) as K[] | {
 		[k in K]?: Value<DeValue<T[k]> | undefined>;
 	},
-	set?: (value: DeValue<T[K]>, setted: boolean, key?: K) => void
+	set?: (value: DeValue<T[K]>, key?: K) => void
 ): { [k in keyof T]: k extends K ? DeValue<T[k]> : T[k]; } {
 	const p = Object.create(source);
-	if (Array.isArray(props)) {
-		for (const key of props) {
-			const value = createValue(
-				source,
-				key,
-				undefined,
-				set && ((v, s) => set!(v, s, key))
-			);
-			Reflect.defineProperty(p, key, {
-				get() { return value(); },
-				set(v) { value.value = v; },
-				configurable: true,
-				enumerable: true,
-			});
-		}
-		return p;
+	function setValue(value: DeValue<T[K]>, key: K): void {
+		if (!set) { return; }
+		set(value, key);
 	}
-	const keys = Reflect.ownKeys(props) as K[];
+	const keys = (Array.isArray(props) ? props : Reflect.ownKeys(props)) as K[];
+	const values = Array.isArray(props) ? source : props;
 	for (const key of keys) {
-		const value = createValue(
-			source,
-			key,
-			props[key],
-			set && ((v, s) => set!(v, s, key))
-		);
+		const value = values[key];
+		if (!isValue(value)) { continue; }
 		Reflect.defineProperty(p, key, {
 			get() { return value(); },
-			set(v) { value.value = v; },
+			set(v) { value.value = v; setValue(v, key); },
 			configurable: true,
 			enumerable: true,
 		});
