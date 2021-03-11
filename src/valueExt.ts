@@ -36,11 +36,7 @@ function createValue<T, K extends keyof T>(
 			setValue(v, true);
 			return;
 		}
-		if (p === undefined && def) {
-			def(v);
-			setValue(v, false);
-			return;
-		}
+		if (p === undefined && def) { def(v); }
 		setValue(v, false);
 	});
 }
